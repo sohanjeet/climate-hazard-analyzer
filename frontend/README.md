@@ -32,7 +32,7 @@ The backend must allow the frontend's origin (`CORS_ALLOWED_ORIGINS`) and be run
 
 ## Behaviour worth knowing
 
-- Cold analyses take 5 to 15 s: the loading state shows staged status text, an elapsed timer, a skeleton and Cancel. The client gives up after 90 s.
+- Cold analyses take 5 to 15 s against a local MongoDB and about 42 s against Atlas (warm: 1 to 1.4 s): the loading state shows staged status text, an elapsed timer, a skeleton and Cancel. The client gives up after 90 s.
 - 429 and 503 honour `Retry-After` (clamped to 120 s): the Analyze button and the error panel count down.
 - Incomplete years are drawn hatched and left out of trends. Years with no events have no bar for mean duration and intensity, because those values are undefined, not zero.
 - Dark mode follows the operating system. Motion (bar growth, shimmer, spinners, smooth scroll) is switched off under `prefers-reduced-motion`.

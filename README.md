@@ -127,12 +127,12 @@ No test needs production credentials. Backend tests need only a local MongoDB; f
 
 Not performed yet. Per-platform settings and variables (Render, Atlas, Vercel) are in [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md). What a deployment needs, based on how the code is built:
 
-1. **MongoDB Atlas** (or any MongoDB): create a database user, allow the backend host's IP in Atlas network access, and put the `mongodb+srv://` string in the backend host's secret store as `MONGODB_URI`. Indexes (including unique ones) are created automatically at startup. Atlas compatibility has not been tested against a real Atlas cluster.
+1. **MongoDB Atlas** (or any MongoDB): create a database user, allow the backend host's IP in Atlas network access, and put the `mongodb+srv://` string in the backend host's secret store as `MONGODB_URI`. Indexes (including unique ones) are created automatically at startup. Verified against a real Atlas cluster from a local backend (startup, indexes, `/health/db`, a real heatwave analysis, 12,053 stored records); not yet verified from a hosted backend.
 2. **Backend** on any host that runs a long-lived Python 3.11 process:
    - install: `pip install -r requirements.txt`; start (from `backend/`): `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
    - set `MONGODB_URI`, `CORS_ALLOWED_ORIGINS=<frontend origin>`, and `TRUST_PROXY_HEADERS=true` only if the platform's proxy sets `X-Forwarded-For`.
    - run a **single worker**: the rate limiter is per process (N workers multiply the limit by N). Use `/health` for liveness and `/health/db` for readiness.
-   - **Request time:** a cold request loads about 31 yearly chunks (about 5 to 15 s measured locally) and up to 120 for a 90-year window. The platform's HTTP timeout must exceed this (the browser gives up at 90 s); platforms with a 30 s limit will cut off long windows on cold locations. Repeat requests take about 0.2 to 0.4 s locally.
+   - **Request time:** a cold request loads about 31 yearly chunks and up to 120 for a 90-year window. Measured: about 5 to 15 s against a local MongoDB, but **41.65 s against MongoDB Atlas** (a remote database makes each of the many upserts and reads slower). Repeat requests take about 0.2 to 0.4 s locally and **1.12 to 1.35 s against Atlas**. The platform's HTTP timeout must exceed the cold time (the browser gives up at 90 s); platforms with a 30 s limit will cut off cold locations, and long windows are slower still.
 3. **Frontend**: `cd frontend && VITE_API_BASE_URL=<backend URL> npm run build`, then serve `frontend/dist/` from any static host. Production builds fail if `VITE_API_BASE_URL` is missing or invalid (and, on Vercel, if it is localhost or not https), so a bundle cannot silently call `localhost`. It is a single-page app with no client-side routing, so no rewrite rules are needed.
 4. Set `CORS_ALLOWED_ORIGINS` on the backend to the exact frontend origin, then check `/health/db` and run one analysis end to end.
 
@@ -143,7 +143,7 @@ Not performed yet. Per-platform settings and variables (Render, Atlas, Vercel) a
 - Most recent weeks of reanalysis data are preliminary; cached records are not refreshed automatically.
 - The rate limiter is in memory and per process; there is no authentication.
 - Cold requests depend on Open-Meteo availability and its usage terms; they were measured only at concurrency 4 with a local MongoDB.
-- Not verified: behaviour against MongoDB Atlas, sustained load from many clients, any hosted environment.
+- Not verified: behaviour from a hosted backend (Atlas itself was verified from a local one), sustained load from many clients, any hosted environment.
 - Dark mode follows the operating system (no manual toggle).
 
 ## AI assistance disclosure

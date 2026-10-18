@@ -57,6 +57,6 @@ The app is a single-page app with no client-side routing, so no rewrite rules ar
 ## Pre-flight checklist (after deploying)
 
 1. `GET <backend>/health` returns `{"status":"healthy"}` and `GET <backend>/health/db` the same.
-2. Open the Vercel URL, run one analysis for the default location (a cold request takes about 5 to 15 s; check the platform's request timeout allows it).
+2. Open the Vercel URL, run one analysis for the default location (a cold request took 41.65 s against Atlas, 5 to 15 s against a local MongoDB; the platform's request timeout must allow it and the browser gives up at 90 s).
 3. The browser console shows no CORS error (if it does, `CORS_ALLOWED_ORIGINS` does not match the Vercel origin exactly).
-4. Repeat the analysis and confirm it is fast (served from MongoDB).
+4. Repeat the analysis and confirm it is fast (served from MongoDB; 1.12 to 1.35 s measured against Atlas from a local backend).

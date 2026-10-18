@@ -144,7 +144,9 @@ All values are environment variables (or `.env`); `.env.example` lists them with
 
 Concurrency 4 cuts the cold time by about 2.4 to 2.8x in the clean runs, not 4x: Open-Meteo answers each request a little slower under parallel load (mean 0.3 to 0.5 s against 0.2 s). In all five runs the stored data matched: the warm result equalled the cold result, and sequential and concurrent runs gave the same threshold and events. A warm request is about 0.2 to 0.4 s, split roughly into 0.2 s of MongoDB reads (about 11,000 documents) and 0.07 s of baseline computation; this was left as is. The sequential rows use the new pooled client and retry logic, so they approximate, rather than exactly reproduce, the pre-Phase-6 code.
 
-Not measured: behaviour under sustained parallel load from many clients, higher concurrency values (5 to 8), a remote MongoDB (Atlas) where each query costs more, and how Open-Meteo's own weighted call limits react to repeated cold runs. 31 requests per cold run should be well inside Open-Meteo's free-tier limits (check their current terms; the limits were not looked up or approached here).
+Against MongoDB Atlas (one cold run and repeated warm runs, 2026-10-18) a cold analysis took 41.65 s and warm ones 1.12 to 1.35 s, against 5 to 7 s and 0.2 to 0.4 s with a local MongoDB above. The extra time is presumably network round trips to the remote database; the split between writes and reads was not profiled.
+
+Not measured: behaviour under sustained parallel load from many clients, higher concurrency values (5 to 8), sustained load against a remote MongoDB, and how Open-Meteo's own weighted call limits react to repeated cold runs. 31 requests per cold run should be well inside Open-Meteo's free-tier limits (check their current terms; the limits were not looked up or approached here).
 
 ### Persistence of analysis results
 
