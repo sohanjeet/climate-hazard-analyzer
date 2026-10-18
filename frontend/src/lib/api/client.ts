@@ -1,0 +1,100 @@
+import { ApiError, kindForStatus, parseErrorBody, parseRetryAfter } from './errors'
+import { parseHeatwaveAnalysis } from './parse'
+import type { HeatwaveAnalysis, HeatwaveRequest } from './types'
+
+/** A cold analysis takes ~5-15 s; the backend's own worst case is ~33 s per chunk. Give up well after that. */
+export const REQUEST_TIMEOUT_MS = 90_000
+
+const DEFAULT_BASE_URL = 'http://localhost:8000'
+
+export function getApiBaseUrl(): string {
+  const configured = import.meta.env.VITE_API_BASE_URL as string | undefined
+  return (configured?.trim() || DEFAULT_BASE_URL).replace(/\/+$/, '')
+}
+
+export function buildHeatwaveUrl(request: HeatwaveRequest, baseUrl: string = getApiBaseUrl()): string {
+  const params = new URLSearchParams({
+    latitude: String(request.latitude),
+    longitude: String(request.longitude),
+    start_date: request.startDate,
+    end_date: request.endDate,
+  })
+  if (request.rollingWindowYears !== undefined) params.set('rolling_window_years', String(request.rollingWindowYears))
+  if (request.baselineStartYear !== undefined) params.set('baseline_start_year', String(request.baselineStartYear))
+  if (request.baselineEndYear !== undefined) params.set('baseline_end_year', String(request.baselineEndYear))
+  return `${baseUrl}/api/heatwaves?${params.toString()}`
+}
+
+interface FetchOptions {
+  signal?: AbortSignal
+  timeoutMs?: number
+  baseUrl?: string
+  fetchImpl?: typeof fetch
+}
+
+export async function fetchHeatwaves(request: HeatwaveRequest, options: FetchOptions = {}): Promise<HeatwaveAnalysis> {
+  const { signal, timeoutMs = REQUEST_TIMEOUT_MS, baseUrl, fetchImpl = fetch } = options
+  const url = buildHeatwaveUrl(request, baseUrl)
+
+  const controller = new AbortController()
+  let timedOut = false
+  const timer = setTimeout(() => {
+    timedOut = true
+    controller.abort()
+  }, timeoutMs)
+  const onCallerAbort = () => controller.abort()
+  if (signal?.aborted) controller.abort()
+  else signal?.addEventListener('abort', onCallerAbort, { once: true })
+
+  try {
+    let response: Response
+    try {
+      response = await fetchImpl(url, { headers: { Accept: 'application/json' }, signal: controller.signal })
+    } catch (error) {
+      if (timedOut) throw new ApiError('timeout', 'The request timed out in the browser before the server answered.')
+      if (controller.signal.aborted || (error instanceof DOMException && error.name === 'AbortError')) {
+        throw new ApiError('aborted', 'Request cancelled.')
+      }
+      throw new ApiError('network', 'Network request failed.')
+    }
+
+    const requestId = response.headers.get('X-Request-ID')
+
+    let body: unknown = null
+    try {
+      body = await response.json()
+    } catch {
+      if (timedOut) throw new ApiError('timeout', 'The request timed out in the browser before the server answered.')
+      if (controller.signal.aborted) throw new ApiError('aborted', 'Request cancelled.')
+      if (response.ok) {
+        throw new ApiError('invalid_response', 'The response body was not valid JSON.', {
+          status: response.status,
+          requestId,
+        })
+      }
+      // Non-JSON error body (for example an HTML page from a proxy): fall through to the status mapping.
+    }
+
+    if (!response.ok) {
+      const { message, fieldErrors } = parseErrorBody(body)
+      throw new ApiError(kindForStatus(response.status), message ?? `Request failed with status ${response.status}.`, {
+        status: response.status,
+        retryAfterSeconds: parseRetryAfter(response.headers.get('Retry-After')),
+        fieldErrors,
+        requestId,
+      })
+    }
+
+    try {
+      return parseHeatwaveAnalysis(body)
+    } catch (error) {
+      if (error instanceof ApiError) {
+        throw new ApiError(error.kind, error.message, { status: response.status, requestId })
+      }
+      throw error
+    }
+  } finally {
+    clearTimeout(timer)
+    signal?.removeEventListener('abort', onCallerAbort)
+  }
+}

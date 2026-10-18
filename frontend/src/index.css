@@ -1,0 +1,173 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import '@fontsource-variable/hanken-grotesk';
+@import '@fontsource-variable/fraunces';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * Design tokens (OKLCH). Neutrals are tinted toward the ink-blue hue (235) instead of grey.
+ * One accent carries meaning: "heat" is used only for the hazard data itself.
+ */
+:root {
+  --background: oklch(0.982 0.006 235);
+  --foreground: oklch(0.24 0.035 242);
+  --surface: oklch(0.995 0.003 235);
+  --muted: oklch(0.955 0.01 235);
+  --muted-foreground: oklch(0.46 0.03 242);
+  --border: oklch(0.9 0.012 235);
+  --input: oklch(0.78 0.02 238);
+  --ring: oklch(0.52 0.12 240);
+
+  --primary: oklch(0.37 0.075 240);
+  --primary-foreground: oklch(0.985 0.005 235);
+  --primary-hover: oklch(0.31 0.07 240);
+
+  --heat: oklch(0.58 0.185 38);
+  --heat-soft: oklch(0.58 0.185 38 / 0.28);
+  --heat-ink: oklch(0.45 0.15 38);
+  --ink-line: oklch(0.32 0.07 240);
+  --grid: oklch(0.9 0.012 235);
+
+  --warning-bg: oklch(0.965 0.04 88);
+  --warning-border: oklch(0.82 0.1 85);
+  --warning-foreground: oklch(0.38 0.08 70);
+  --danger-bg: oklch(0.965 0.025 25);
+  --danger-border: oklch(0.8 0.1 25);
+  --danger-foreground: oklch(0.42 0.16 27);
+  --info-bg: oklch(0.955 0.02 235);
+  --info-border: oklch(0.84 0.04 235);
+  --info-foreground: oklch(0.33 0.07 240);
+
+  --radius: 0.625rem;
+}
+
+.dark {
+  --background: oklch(0.2 0.025 245);
+  --foreground: oklch(0.94 0.01 235);
+  --surface: oklch(0.235 0.03 245);
+  --muted: oklch(0.27 0.03 245);
+  --muted-foreground: oklch(0.75 0.025 238);
+  --border: oklch(0.34 0.03 245);
+  --input: oklch(0.52 0.03 242);
+  --ring: oklch(0.72 0.11 235);
+
+  --primary: oklch(0.82 0.08 230);
+  --primary-foreground: oklch(0.22 0.04 245);
+  --primary-hover: oklch(0.88 0.07 230);
+
+  --heat: oklch(0.72 0.17 45);
+  --heat-soft: oklch(0.72 0.17 45 / 0.3);
+  --heat-ink: oklch(0.82 0.12 50);
+  --ink-line: oklch(0.9 0.04 235);
+  --grid: oklch(0.34 0.03 245);
+
+  --warning-bg: oklch(0.3 0.05 85);
+  --warning-border: oklch(0.5 0.09 85);
+  --warning-foreground: oklch(0.9 0.08 90);
+  --danger-bg: oklch(0.29 0.06 25);
+  --danger-border: oklch(0.5 0.12 25);
+  --danger-foreground: oklch(0.88 0.08 25);
+  --info-bg: oklch(0.28 0.035 245);
+  --info-border: oklch(0.42 0.05 240);
+  --info-foreground: oklch(0.88 0.04 235);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-surface: var(--surface);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary-hover: var(--primary-hover);
+  --color-heat: var(--heat);
+  --color-heat-ink: var(--heat-ink);
+  --color-warning-bg: var(--warning-bg);
+  --color-warning-border: var(--warning-border);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-danger-bg: var(--danger-bg);
+  --color-danger-border: var(--danger-border);
+  --color-danger-foreground: var(--danger-foreground);
+  --color-info-bg: var(--info-bg);
+  --color-info-border: var(--info-border);
+  --color-info-foreground: var(--info-foreground);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+
+  --font-sans: 'Hanken Grotesk Variable', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Fraunces Variable', ui-serif, Georgia, serif;
+
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+@layer base {
+  * {
+    border-color: var(--border);
+  }
+
+  html {
+    scroll-padding-top: 5rem;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--background);
+    color: var(--foreground);
+    font-family: var(--font-sans);
+    font-size: 1rem;
+    line-height: 1.55;
+    font-feature-settings: 'tnum' 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 2px;
+  }
+
+  /* Numbers in tables and stats align in columns. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  .recharts-surface:focus {
+    outline: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Skeleton shimmer is a slow luminance sweep; replaced by a static block when motion is reduced. */
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  html {
+    scroll-behavior: smooth;
+  }
+}

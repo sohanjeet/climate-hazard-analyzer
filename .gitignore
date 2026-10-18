@@ -1,0 +1,27 @@
+# Secrets and local configuration (the *.example files are the only env files to commit)
+.env
+.env.*
+!.env.example
+*.local
+
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Node / build output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+screenshots/
+
+# Editor / tooling
+.vscode/
+.idea/
+.claude/
+.DS_Store
