@@ -1,21 +1,21 @@
 # Climate Hazard Trend Analyzer
 
-A web dashboard that shows how often, how long and how intense heatwaves were at any place on Earth, and whether those numbers are trending up or down over a chosen period. You pick a latitude/longitude and a date window; the backend pulls historical daily maximum temperatures, detects heatwaves against a fixed local threshold, and fits statistical trends.
+A web dashboard that shows how often, how long and how intense heatwaves were at any place on Earth, and whether those numbers are trending up or down over a chosen period. You pick a latitude/longitude and a date window; the backend pulls historical daily maximum temperatures, detects heatwaves against a fixed local threshold, and fits statistical trends. Two views build on that (Phase 9): **annual temperature anomalies** against the same 1991 to 2020 baseline, and a **side-by-side comparison of 2 to 4 locations**.
 
 > **Status:** development is complete and tested locally. Nothing has been deployed and there is no public URL yet. See [Deployment](#deployment) and [Known limitations](#known-limitations).
 
 ## Architecture
 
 ```
-Browser (React SPA)  --GET /api/heatwaves-->  FastAPI  --GET-->  Open-Meteo archive API
+Browser (React SPA)  --GET /api/heatwaves, /api/temperature-anomalies-->  FastAPI  --GET-->  Open-Meteo archive API
                                                  |
                                                  +--> MongoDB (weather_records, ingestion_cache, analysis_results)
 ```
 
-- **Frontend** (`frontend/`): static single-page app. Calls only `GET /api/heatwaves`, validates every response at runtime, and renders summary metrics, four charts, trend insights, data-quality notes and a methodology section.
+- **Frontend** (`frontend/`): static single-page app. Calls only `GET /api/heatwaves` and `GET /api/temperature-anomalies`, validates every response at runtime, and has two views: **Analyze** (summary metrics, four charts, a temperature-anomaly section, trend insights, data-quality notes, methodology) and **Compare** (2 to 4 locations: summary cards, comparison table, three line charts, coverage notes).
 - **Backend** (`backend/`): FastAPI service. Loads the baseline (default 1991 to 2020) and the analysis window one calendar year at a time, stores daily records in MongoDB so repeat requests are served from the database, then computes heatwave events, annual metrics and trends.
 - **Data source:** [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api), variable `temperature_2m_max`, UTC days.
-- `docs/phase4a_heatwave_design.md` is the original design note for the heatwave method.
+- `docs/phase4a_heatwave_design.md` is the original design note for the heatwave method; `docs/temperature_anomaly_design.md` covers the anomaly method and the comparison design.
 
 ## Technology stack
 
@@ -63,7 +63,7 @@ Real `.env` / `.env.local` files are git-ignored; only the `.env.example` files 
 | `DATABASE_NAME` | `climate_hazard_db` | |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | **Required in production:** set to the deployed frontend origin (comma-separated). |
 | `TRUST_PROXY_HEADERS` | `false` | Set `true` only behind a reverse proxy you control; it makes the rate limiter use the last `X-Forwarded-For` entry. |
-| `RATE_LIMIT_ENABLED`, `RATE_LIMIT_REQUESTS_PER_MINUTE`, `RATE_LIMIT_HEATWAVE_REQUESTS_PER_MINUTE` | `true`, `60`, `20` | Per client IP, in process memory. |
+| `RATE_LIMIT_ENABLED`, `RATE_LIMIT_REQUESTS_PER_MINUTE`, `RATE_LIMIT_HEATWAVE_REQUESTS_PER_MINUTE` | `true`, `60`, `20` | Per client IP, in process memory. The last one applies separately to `/api/heatwaves` and `/api/temperature-anomalies`. |
 | `WEATHER_FETCH_CONCURRENCY` | `4` | Simultaneous Open-Meteo requests (1 to 8). |
 | `OPEN_METEO_TIMEOUT_SECONDS`, `OPEN_METEO_MAX_RETRIES`, `OPEN_METEO_BASE_URL` | `10`, `2`, archive URL | |
 | `MONGODB_*_TIMEOUT_MS`, `MONGODB_MAX_POOL_SIZE` | see example file | |
@@ -80,6 +80,7 @@ Real `.env` / `.env.local` files are git-ignored; only the `.env.example` files 
 | Method and path | Purpose |
 |---|---|
 | `GET /api/heatwaves?latitude&longitude&start_date&end_date[&baseline_start_year&baseline_end_year&rolling_window_years]` | Heatwave events, annual metrics, summary, trend analysis, data quality. Rate limit 20/min per IP by default. |
+| `GET /api/temperature-anomalies?latitude&longitude&start_date&end_date[&baseline_start_year&baseline_end_year]` | Annual mean daily maximum temperature and its anomaly against the fixed baseline, with coverage, per-year status and data-quality warnings. Rate limit 20/min per IP by default, in its own bucket. |
 | `GET /api/weather?latitude&longitude&start_date&end_date` | Ingest and return daily records (max 366 days). Rate limit 60/min per IP by default. |
 | `GET /health` | Liveness. |
 | `GET /health/db` | Readiness; `503` when MongoDB is unreachable. |
@@ -97,6 +98,23 @@ All errors use `{"detail": {"error": "...", "errors"?: [{"field", "message"}]}}`
 - A year counts as **complete** only if it lies wholly inside the requested window and has at least 95% valid days. Incomplete years are displayed but excluded from per-year rates and trends. The baseline needs at least 90% valid days and 10 calendar years.
 
 The full method, with its biases, is in [backend/README.md](backend/README.md).
+
+## Temperature anomalies and comparison (Phase 9)
+
+- **Anomaly** = annual mean of the daily maximum temperature minus the mean daily maximum over the fixed baseline (1991 to 2020 by default). Example: 32.4 °C - 30.8 °C = **+1.6 °C**. It is not the mean air temperature, not the hottest day of the year and not the heatwave threshold, and it describes the past rather than predicting anything. The baseline is always shown in the API and the UI.
+- **Completeness:** the baseline needs at least 90% valid days (otherwise the API answers `422`; nothing is invented). A year gets an anomaly only if the period covers the whole year and at least 95% of its days are valid; other years report their mean but no anomaly. Missing days are excluded, never counted as zero. Temperatures are rounded to 2 decimals.
+- **Comparison:** the UI calls the two existing endpoints once per location, two locations at a time (no batch endpoint was needed), with one shared period and method. Each location and each request has its own loading and error state and can be retried alone. Presets: Delhi, Mumbai, Bengaluru, Chennai; custom coordinates are validated and duplicates are refused. Averages state their denominator (complete years); "No events", "No complete year" and "Failed to load" are shown instead of zeros.
+- Heatwave counts and anomalies are relative to each location's own threshold and baseline; only the mean daily maximum is an absolute temperature.
+- Details, formulas and boundaries: [docs/temperature_anomaly_design.md](docs/temperature_anomaly_design.md) and [backend/README.md](backend/README.md).
+
+Example request: `curl "http://localhost:8000/api/temperature-anomalies?latitude=19.0760&longitude=72.8777&start_date=2010-01-01&end_date=2025-12-31"`.
+
+## Historical-weather cache and performance (Phase 9.1)
+
+- **Authoritative cache:** for a normal read, a complete requested range in `weather_records` is authoritative. The service performs one indexed MongoDB range read for an already-complete warm range rather than reading each yearly chunk and its ingestion-cache metadata separately.
+- **TTL behaviour:** `ingestion_cache` remains TTL metadata for ingestion. Its expiry does **not** cause an otherwise complete historical range to be refreshed from Open-Meteo. Explicit refresh or invalidation is a future enhancement.
+- **Data revisions:** historical/reanalysis data, especially recent weeks, can be revised by Open-Meteo. Stored records therefore represent the values fetched at ingestion time until an explicit refresh capability exists.
+- **Verified isolated benchmark:** Phase 9.1 measured the optimized warm path as 31% faster for heatwave analysis, 21% faster for anomaly analysis, 45% faster for a two-city comparison, and 47% faster for a four-city comparison. These are controlled benchmark improvements, not production service-level measurements. Cold requests still require upstream ingestion; see [backend performance notes](backend/README.md#performance-phase-91).
 
 ## Statistical assumptions
 
@@ -132,7 +150,7 @@ Not performed yet. Per-platform settings and variables (Render, Atlas, Vercel) a
    - install: `pip install -r requirements.txt`; start (from `backend/`): `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
    - set `MONGODB_URI`, `CORS_ALLOWED_ORIGINS=<frontend origin>`, and `TRUST_PROXY_HEADERS=true` only if the platform's proxy sets `X-Forwarded-For`.
    - run a **single worker**: the rate limiter is per process (N workers multiply the limit by N). Use `/health` for liveness and `/health/db` for readiness.
-   - **Request time:** a cold request loads about 31 yearly chunks and up to 120 for a 90-year window. Measured: about 5 to 15 s against a local MongoDB, but **41.65 s against MongoDB Atlas** (a remote database makes each of the many upserts and reads slower). Repeat requests take about 0.2 to 0.4 s locally and **1.12 to 1.35 s against Atlas**. The platform's HTTP timeout must exceed the cold time (the browser gives up at 90 s); platforms with a 30 s limit will cut off cold locations, and long windows are slower still.
+    - **Request time:** a cold request loads about 31 yearly chunks and up to 120 for a 90-year window. Its latency remains upstream-dependent and was not re-benchmarked in Phase 9.1; the platform timeout must accommodate it (the browser gives up at 90 s). Warm performance improved in isolated Phase 9.1 benchmarks through indexed range reads (see [backend performance notes](backend/README.md#performance-phase-91)). Hosted-production latency and capacity have not been measured, so verify platform timeouts and end-to-end timing before launch.
 3. **Frontend**: `cd frontend && VITE_API_BASE_URL=<backend URL> npm run build`, then serve `frontend/dist/` from any static host. Production builds fail if `VITE_API_BASE_URL` is missing or invalid (and, on Vercel, if it is localhost or not https), so a bundle cannot silently call `localhost`. It is a single-page app with no client-side routing, so no rewrite rules are needed.
 4. Set `CORS_ALLOWED_ORIGINS` on the backend to the exact frontend origin, then check `/health/db` and run one analysis end to end.
 
@@ -140,9 +158,11 @@ Not performed yet. Per-platform settings and variables (Render, Atlas, Vercel) a
 
 - Single grid cell per location, daily maximum only (no humidity or night-time heat), UTC days, one all-season threshold. See [backend/README.md](backend/README.md) for the full list.
 - Years inside the baseline are measured against a threshold they helped set (flagged with `analysis_overlaps_baseline`).
-- Most recent weeks of reanalysis data are preliminary; cached records are not refreshed automatically.
+- Historical/reanalysis datasets can be revised upstream, especially for recent weeks. Complete stored ranges remain authoritative after ingestion-cache TTL expiry; they are not refreshed automatically. Explicit refresh/invalidation is not implemented yet.
 - The rate limiter is in memory and per process; there is no authentication.
-- Cold requests depend on Open-Meteo availability and its usage terms; they were measured only at concurrency 4 with a local MongoDB.
+- Cold requests depend on Open-Meteo availability and its usage terms. The upstream cap remains 4 concurrent fetches, so cold comparisons of new locations can be slow.
+- Phase 9.1 isolated benchmarks found 31%/21% faster warm heatwave/anomaly analyses and 45%/47% faster two-/four-city comparisons. These figures are not production measurements; hosted behaviour, sustained load and capacity remain unverified.
+- Two locations whose coordinates differ but fall in the same Open-Meteo grid cell (about 10 km) give identical data; only identical coordinates (to 4 decimals) are refused.
 - Not verified: behaviour from a hosted backend (Atlas itself was verified from a local one), sustained load from many clients, any hosted environment.
 - Dark mode follows the operating system (no manual toggle).
 

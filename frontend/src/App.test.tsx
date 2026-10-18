@@ -1,20 +1,23 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import App from '@/App'
 import { ApiError } from '@/lib/api/errors'
 import type { HeatwaveAnalysis, HeatwaveRequest } from '@/lib/api/types'
-import { makeAnalysis, type FixtureOptions } from '@/test/fixtures'
+import { makeAnalysis, makeAnomalies, type FixtureOptions } from '@/test/fixtures'
 
 // 14 Oct 2026 -> the archive ends 9 Oct 2026 and the default period is 2010-01-01 to 2025-12-31.
 const NOW = new Date(2026, 9, 14)
 
 type Fetcher = (request: HeatwaveRequest, options: { signal: AbortSignal }) => Promise<HeatwaveAnalysis>
 
+// Anomalies load next to the heatwave analysis; tests inject a stub so no test reaches the network.
+const anomalyOk = async () => makeAnomalies()
+
 function setup(fetcher: Fetcher) {
   const spy = vi.fn(fetcher)
   const user = userEvent.setup()
-  render(<App fetcher={spy} now={NOW} />)
+  render(<App fetcher={spy} anomalyFetcher={anomalyOk} now={NOW} />)
   return { spy, user }
 }
 
@@ -37,6 +40,11 @@ function mockMedia(matching: (query: string) => boolean) {
       onchange: null,
     }) as MediaQueryList) as typeof window.matchMedia
 }
+
+// The anomaly section is lazy-loaded; transform it up front so a busy machine cannot time out the first test.
+beforeAll(async () => {
+  await import('@/components/AnomalySection')
+})
 
 afterEach(() => {
   mockMedia(() => false)
@@ -178,13 +186,15 @@ describe('results', () => {
     expect(screen.getByRole('heading', { name: 'Trends' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Data quality' })).toBeInTheDocument()
     expect(screen.getByRole('heading', { name: 'Methodology' })).toBeInTheDocument()
-    expect(screen.getAllByRole('figure')).toHaveLength(4)
+    expect(within(document.getElementById('charts') as HTMLElement).getAllByRole('figure')).toHaveLength(4)
+    expect(await screen.findByRole('heading', { name: 'Temperature anomalies' })).toBeInTheDocument()
     expect(screen.getByRole('status', { hidden: true, name: '' })).toBeDefined()
 
     const nav = screen.getByRole('navigation', { name: 'Result sections' })
     expect(within(nav).getAllByRole('link').map((a) => a.getAttribute('href'))).toEqual([
       '#summary',
       '#charts',
+      '#anomalies',
       '#trends',
       '#quality',
       '#method',

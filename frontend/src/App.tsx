@@ -1,6 +1,7 @@
-import { Suspense, lazy, useEffect, useMemo, useRef } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { AnalysisForm } from '@/components/AnalysisForm'
-import { AppHeader, type NavSection } from '@/components/AppHeader'
+import { AppHeader, type AppView, type NavSection } from '@/components/AppHeader'
+import { ComparisonView } from '@/components/compare/ComparisonView'
 import { DataQuality } from '@/components/DataQuality'
 import { Methodology } from '@/components/Methodology'
 import { ResultsHeader } from '@/components/ResultsHeader'
@@ -8,19 +9,23 @@ import { ChartsFallback, EmptyState, ErrorState, LoadingState } from '@/componen
 import { SummaryMetrics } from '@/components/SummaryMetrics'
 import { TrendInsights } from '@/components/TrendInsights'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { useAnomalyAnalysis } from '@/hooks/useAnomalyAnalysis'
+import type { ComparisonFetchers } from '@/hooks/useComparison'
 import { useCountdown, useHeatwaveAnalysis } from '@/hooks/useHeatwaveAnalysis'
 import { useSystemTheme } from '@/hooks/useMediaQuery'
-import { fetchHeatwaves } from '@/lib/api/client'
+import { fetchHeatwaves, fetchTemperatureAnomalies } from '@/lib/api/client'
 import type { HeatwaveRequest } from '@/lib/api/types'
 import { formatInteger } from '@/lib/format'
 import { formFieldForApiField, formFieldForMessage, type FormErrors } from '@/lib/validation'
 
 // Recharts is the bulk of the bundle and is only needed once there are results.
 const ChartsSection = lazy(() => import('@/components/ChartsSection').then((m) => ({ default: m.ChartsSection })))
+const AnomalySection = lazy(() => import('@/components/AnomalySection').then((m) => ({ default: m.AnomalySection })))
 
 const RESULT_SECTIONS: NavSection[] = [
   { id: 'summary', label: 'Summary' },
   { id: 'charts', label: 'Charts' },
+  { id: 'anomalies', label: 'Anomalies' },
   { id: 'trends', label: 'Trends' },
   { id: 'quality', label: 'Data quality' },
   { id: 'method', label: 'Method' },
@@ -32,10 +37,27 @@ const HEADER_CLEARANCE_PX = 72
 const NO_SECTIONS: NavSection[] = []
 
 type Fetcher = Parameters<typeof useHeatwaveAnalysis>[0]
+type AnomalyFetcher = Parameters<typeof useAnomalyAnalysis>[0]
 
-export default function App({ fetcher = fetchHeatwaves, now }: { fetcher?: Fetcher; now?: Date }) {
+interface AppProps {
+  fetcher?: Fetcher
+  anomalyFetcher?: AnomalyFetcher
+  comparisonFetchers?: ComparisonFetchers
+  now?: Date
+}
+
+export default function App({ fetcher = fetchHeatwaves, anomalyFetcher = fetchTemperatureAnomalies, comparisonFetchers, now }: AppProps) {
   useSystemTheme()
   const { state, run, cancel } = useHeatwaveAnalysis(fetcher)
+  const anomalies = useAnomalyAnalysis(anomalyFetcher)
+  const [view, setView] = useState<AppView>('analyzer')
+  // The comparison view mounts the first time it is opened and then stays mounted (hidden) so switching back
+  // and forth keeps its selection and results.
+  const [compareOpened, setCompareOpened] = useState(false)
+  function changeView(next: AppView) {
+    if (next === 'compare') setCompareOpened(true)
+    setView(next)
+  }
   const headingRef = useRef<HTMLHeadingElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
   const cooldownSeconds = useCountdown(state.status === 'error' ? state.retryAt : null)
@@ -80,19 +102,37 @@ export default function App({ fetcher = fetchHeatwaves, now }: { fetcher?: Fetch
 
   function startRun(request: HeatwaveRequest) {
     void run(request)
+    // Anomalies are a separate request so their failure never hides the heatwave results. Both calls share the
+    // backend's stored daily data, so the second one adds no upstream traffic.
+    void anomalies.run({
+      latitude: request.latitude,
+      longitude: request.longitude,
+      startDate: request.startDate,
+      endDate: request.endDate,
+    })
+  }
+
+  function cancelRun() {
+    cancel()
+    anomalies.cancel()
   }
 
   return (
     <TooltipProvider>
       <a
-        href="#results"
+        href={view === 'compare' ? '#compare-results' : '#results'}
         className="sr-only z-50 rounded-md bg-primary px-4 py-2 font-semibold text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
       >
         Skip to results
       </a>
-      <AppHeader sections={state.status === 'success' ? RESULT_SECTIONS : NO_SECTIONS} />
+      <AppHeader
+        sections={view === 'analyzer' && state.status === 'success' ? RESULT_SECTIONS : NO_SECTIONS}
+        view={view}
+        onViewChange={changeView}
+      />
 
       <main id="top" className="mx-auto max-w-[88rem] px-4 pt-8 pb-20 sm:px-6 sm:pt-12 lg:px-8">
+        <div hidden={view !== 'analyzer'}>
         <div className="max-w-3xl">
           <h1 className="font-display text-[2rem] leading-[1.1] font-semibold tracking-tight text-balance sm:text-5xl">
             Heatwave Trend Analyzer
@@ -107,7 +147,7 @@ export default function App({ fetcher = fetchHeatwaves, now }: { fetcher?: Fetch
             <div className="rounded-lg border bg-surface p-5">
               <AnalysisForm
                 onSubmit={startRun}
-                onCancel={cancel}
+                onCancel={cancelRun}
                 busy={state.status === 'loading'}
                 cooldownSeconds={cooldownSeconds}
                 serverErrors={serverErrors}
@@ -133,6 +173,9 @@ export default function App({ fetcher = fetchHeatwaves, now }: { fetcher?: Fetch
                 <Suspense fallback={<ChartsFallback />}>
                   <ChartsSection data={state.data} />
                 </Suspense>
+                <Suspense fallback={null}>
+                  <AnomalySection part={anomalies.part} onRetry={anomalies.retry} />
+                </Suspense>
                 <TrendInsights data={state.data} />
                 <DataQuality data={state.data} />
                 <Methodology data={state.data} />
@@ -140,6 +183,12 @@ export default function App({ fetcher = fetchHeatwaves, now }: { fetcher?: Fetch
             ) : null}
           </div>
         </div>
+        </div>
+        {compareOpened ? (
+          <div hidden={view !== 'compare'}>
+            <ComparisonView fetchers={comparisonFetchers} now={now} />
+          </div>
+        ) : null}
       </main>
     </TooltipProvider>
   )

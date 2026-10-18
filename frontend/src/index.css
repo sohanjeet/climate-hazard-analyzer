@@ -29,6 +29,15 @@
   --ink-line: oklch(0.32 0.07 240);
   --grid: oklch(0.9 0.012 235);
 
+  /* Negative temperature anomalies (cooler than baseline); positive anomalies use --heat. */
+  --cool: oklch(0.48 0.13 250);
+  /* City series for the comparison charts: categorical slots 1-4, validated (CVD and normal vision) for this
+     surface. Never the only cue: every series also has its own marker shape, dash pattern and legend entry. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-4: #eda100;
+
   --warning-bg: oklch(0.965 0.04 88);
   --warning-border: oklch(0.82 0.1 85);
   --warning-foreground: oklch(0.38 0.08 70);
@@ -61,6 +70,12 @@
   --heat-ink: oklch(0.82 0.12 50);
   --ink-line: oklch(0.9 0.04 235);
   --grid: oklch(0.34 0.03 245);
+
+  --cool: oklch(0.76 0.1 240);
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-4: #c98500;
 
   --warning-bg: oklch(0.3 0.05 85);
   --warning-border: oklch(0.5 0.09 85);

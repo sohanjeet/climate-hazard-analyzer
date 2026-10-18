@@ -197,3 +197,90 @@ export interface FieldError {
   field: string
   message: string
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// GET /api/temperature-anomalies (backend/app/schemas/anomaly.py)
+
+export type AnomalyYearStatus = 'complete' | 'partial_year' | 'low_coverage' | 'no_data'
+
+export interface AnomalyMethod {
+  method_version: string
+  metric: string
+  baseline_statistic: string
+  anomaly_formula: string
+  unit: string
+  temperature_decimals: number
+  coverage_decimals: number
+  baseline_min_coverage: number
+  year_min_coverage: number
+  missing_value_policy: string
+  incomplete_year_policy: string
+}
+
+export interface AnomalyBaseline {
+  start_year: number
+  end_year: number
+  mean_daily_max_c: number
+  observation_count: number
+  expected_count: number
+  coverage: number
+  low_coverage_years: number[]
+}
+
+export interface AnnualAnomaly {
+  year: number
+  /** Null when the year has no valid observation. */
+  annual_mean_daily_max_c: number | null
+  /** Null unless `status` is "complete". */
+  anomaly_c: number | null
+  observation_count: number
+  expected_count: number
+  coverage: number
+  status: AnomalyYearStatus
+  warnings: string[]
+}
+
+export interface AnomalySummary {
+  years_in_window: number
+  complete_years: number
+  mean_anomaly_c: number | null
+  mean_annual_daily_max_c: number | null
+  max_anomaly_c: number | null
+  max_anomaly_year: number | null
+  min_anomaly_c: number | null
+  min_anomaly_year: number | null
+  positive_years: number
+  negative_years: number
+  zero_years: number
+}
+
+export interface AnomalyDataQuality {
+  analysis_coverage: number
+  missing_day_count: number
+  warnings: string[]
+}
+
+export interface TemperatureAnomalies {
+  location_key: string
+  analysis_type: string
+  latitude: number
+  longitude: number
+  start_date: string
+  end_date: string
+  method: AnomalyMethod
+  baseline: AnomalyBaseline
+  annual: AnnualAnomaly[]
+  summary: AnomalySummary
+  data_quality: AnomalyDataQuality
+  source: string
+  computed_at: string
+}
+
+export interface AnomalyRequest {
+  latitude: number
+  longitude: number
+  startDate: string
+  endDate: string
+  baselineStartYear?: number
+  baselineEndYear?: number
+}

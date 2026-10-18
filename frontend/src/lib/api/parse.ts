@@ -16,6 +16,13 @@ import type {
   TrendInsight,
   TrendMetric,
   TrendMethod,
+  AnnualAnomaly,
+  AnomalyBaseline,
+  AnomalyDataQuality,
+  AnomalyMethod,
+  AnomalySummary,
+  AnomalyYearStatus,
+  TemperatureAnomalies,
 } from './types'
 
 /**
@@ -292,6 +299,106 @@ export function parseHeatwaveAnalysis(body: unknown): HeatwaveAnalysis {
       summary: parseSummary(o.summary, 'summary'),
       trend: o.trend === undefined || o.trend === null ? null : parseTrend(o.trend, 'trend'),
       data_quality: parseDataQuality(o.data_quality, 'data_quality'),
+      source: str(o.source, 'source'),
+      computed_at: str(o.computed_at, 'computed_at'),
+    }
+  } catch (error) {
+    if (error instanceof ShapeError) {
+      throw new ApiError('invalid_response', error.message)
+    }
+    throw error
+  }
+}
+
+const ANOMALY_STATUSES: readonly AnomalyYearStatus[] = ['complete', 'partial_year', 'low_coverage', 'no_data']
+
+function parseAnomalyMethod(v: unknown, p: string): AnomalyMethod {
+  const o = rec(v, p)
+  return {
+    method_version: str(o.method_version, `${p}.method_version`),
+    metric: str(o.metric, `${p}.metric`),
+    baseline_statistic: str(o.baseline_statistic, `${p}.baseline_statistic`),
+    anomaly_formula: str(o.anomaly_formula, `${p}.anomaly_formula`),
+    unit: str(o.unit, `${p}.unit`),
+    temperature_decimals: num(o.temperature_decimals, `${p}.temperature_decimals`),
+    coverage_decimals: num(o.coverage_decimals, `${p}.coverage_decimals`),
+    baseline_min_coverage: num(o.baseline_min_coverage, `${p}.baseline_min_coverage`),
+    year_min_coverage: num(o.year_min_coverage, `${p}.year_min_coverage`),
+    missing_value_policy: str(o.missing_value_policy, `${p}.missing_value_policy`),
+    incomplete_year_policy: str(o.incomplete_year_policy, `${p}.incomplete_year_policy`),
+  }
+}
+
+function parseAnomalyBaseline(v: unknown, p: string): AnomalyBaseline {
+  const o = rec(v, p)
+  return {
+    start_year: num(o.start_year, `${p}.start_year`),
+    end_year: num(o.end_year, `${p}.end_year`),
+    mean_daily_max_c: num(o.mean_daily_max_c, `${p}.mean_daily_max_c`),
+    observation_count: num(o.observation_count, `${p}.observation_count`),
+    expected_count: num(o.expected_count, `${p}.expected_count`),
+    coverage: num(o.coverage, `${p}.coverage`),
+    low_coverage_years: arr(o.low_coverage_years, `${p}.low_coverage_years`, num),
+  }
+}
+
+function parseAnnualAnomaly(v: unknown, p: string): AnnualAnomaly {
+  const o = rec(v, p)
+  return {
+    year: num(o.year, `${p}.year`),
+    annual_mean_daily_max_c: nullable(o.annual_mean_daily_max_c, `${p}.annual_mean_daily_max_c`, num),
+    anomaly_c: nullable(o.anomaly_c, `${p}.anomaly_c`, num),
+    observation_count: num(o.observation_count, `${p}.observation_count`),
+    expected_count: num(o.expected_count, `${p}.expected_count`),
+    coverage: num(o.coverage, `${p}.coverage`),
+    status: oneOf(o.status, `${p}.status`, ANOMALY_STATUSES),
+    warnings: arr(o.warnings, `${p}.warnings`, str),
+  }
+}
+
+function parseAnomalySummary(v: unknown, p: string): AnomalySummary {
+  const o = rec(v, p)
+  const n = (key: string) => nullable(o[key], `${p}.${key}`, num)
+  return {
+    years_in_window: num(o.years_in_window, `${p}.years_in_window`),
+    complete_years: num(o.complete_years, `${p}.complete_years`),
+    mean_anomaly_c: n('mean_anomaly_c'),
+    mean_annual_daily_max_c: n('mean_annual_daily_max_c'),
+    max_anomaly_c: n('max_anomaly_c'),
+    max_anomaly_year: n('max_anomaly_year'),
+    min_anomaly_c: n('min_anomaly_c'),
+    min_anomaly_year: n('min_anomaly_year'),
+    positive_years: num(o.positive_years, `${p}.positive_years`),
+    negative_years: num(o.negative_years, `${p}.negative_years`),
+    zero_years: num(o.zero_years, `${p}.zero_years`),
+  }
+}
+
+function parseAnomalyDataQuality(v: unknown, p: string): AnomalyDataQuality {
+  const o = rec(v, p)
+  return {
+    analysis_coverage: num(o.analysis_coverage, `${p}.analysis_coverage`),
+    missing_day_count: num(o.missing_day_count, `${p}.missing_day_count`),
+    warnings: arr(o.warnings, `${p}.warnings`, str),
+  }
+}
+
+/** Runtime validation of a /api/temperature-anomalies body; a mismatch throws an `invalid_response` ApiError. */
+export function parseTemperatureAnomalies(body: unknown): TemperatureAnomalies {
+  try {
+    const o = rec(body, 'response')
+    return {
+      location_key: str(o.location_key, 'location_key'),
+      analysis_type: str(o.analysis_type, 'analysis_type'),
+      latitude: num(o.latitude, 'latitude'),
+      longitude: num(o.longitude, 'longitude'),
+      start_date: isoDate(o.start_date, 'start_date'),
+      end_date: isoDate(o.end_date, 'end_date'),
+      method: parseAnomalyMethod(o.method, 'method'),
+      baseline: parseAnomalyBaseline(o.baseline, 'baseline'),
+      annual: arr(o.annual, 'annual', parseAnnualAnomaly),
+      summary: parseAnomalySummary(o.summary, 'summary'),
+      data_quality: parseAnomalyDataQuality(o.data_quality, 'data_quality'),
       source: str(o.source, 'source'),
       computed_at: str(o.computed_at, 'computed_at'),
     }

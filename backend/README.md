@@ -1,13 +1,14 @@
 # Climate Hazard Trend Analyzer: backend
 
-FastAPI + MongoDB service that ingests Open-Meteo historical daily maximum temperatures and detects heatwaves.
+FastAPI + MongoDB service that ingests Open-Meteo historical daily maximum temperatures, detects heatwaves and computes annual temperature anomalies.
 
 ## Endpoints
 
 - `GET /api/weather?latitude&longitude&start_date&end_date`: ingest and return daily records (max 366 days per call).
 - `GET /api/heatwaves?latitude&longitude&start_date&end_date[&baseline_start_year&baseline_end_year][&rolling_window_years]`: heatwave events, per-year metrics, summary and a `trend` block (see Trend analysis). `rolling_window_years` is optional (2 to 30, default 5). Clients that ignore `trend` are unaffected.
+- `GET /api/temperature-anomalies?latitude&longitude&start_date&end_date[&baseline_start_year&baseline_end_year]`: annual mean daily maximum temperature and its anomaly against the fixed baseline (Phase 9, see [Temperature anomalies](#temperature-anomalies-phase-9)).
 
-The first heatwave request at a new location loads the 30-year baseline one calendar year at a time: about 30 Open-Meteo calls, at most 4 in flight at once (`WEATHER_FETCH_CONCURRENCY`). Measured cold latency is in [Performance](#performance-phase-6); later requests read from MongoDB. Clients should show a loading state.
+The first heatwave request at a new location loads the 30-year baseline one calendar year at a time: about 30 Open-Meteo calls, at most 4 in flight at once (`WEATHER_FETCH_CONCURRENCY`). Cold-request behaviour is described in [Performance](#performance-phase-6-and-91); later requests read from MongoDB. Clients should show a loading state.
 
 Operational endpoints: `GET /health` (liveness) and `GET /health/db` (readiness; `503 {"status": "unavailable"}` when MongoDB cannot be reached).
 
@@ -85,6 +86,46 @@ Every `/api/heatwaves` response carries a `trend` object (also stored in `analys
 
 The trend is saved inside the same `analysis_results` document. Its key is unchanged (`location_key`, `analysis_type`, `start_date`, `end_date`, `params_hash`), so a rerun with a different `rolling_window_years` overwrites the earlier trend in that document.
 
+## Temperature anomalies (Phase 9)
+
+`GET /api/temperature-anomalies` (method `temperature-anomaly-v1`) compares each year's **mean daily maximum temperature** with the **mean daily maximum over the fixed baseline** (default 1991 to 2020):
+
+```
+temperature_anomaly_c = annual_mean_daily_max_c - baseline_mean_daily_max_c        e.g. 32.4 - 30.8 = +1.6 °C
+```
+
+It is not the mean air temperature, not the absolute annual maximum and not a heatwave threshold (that is the 95th percentile of the same baseline). It describes the past and is not a forecast. The heatwave method and `GET /api/heatwaves` are unchanged. The full definition, thresholds and rounding policy are in [docs/temperature_anomaly_design.md](../docs/temperature_anomaly_design.md).
+
+Example:
+
+```
+GET /api/temperature-anomalies?latitude=28.6139&longitude=77.2090&start_date=2010-01-01&end_date=2025-12-31
+```
+
+```json
+{
+  "location_key": "28.613900,77.209000",
+  "analysis_type": "temperature_anomaly",
+  "method": {"method_version": "temperature-anomaly-v1", "anomaly_formula": "annual_mean_daily_max_c - baseline_mean_daily_max_c", "temperature_decimals": 2, "...": "..."},
+  "baseline": {"start_year": 1991, "end_year": 2020, "mean_daily_max_c": 30.66, "observation_count": 10958, "expected_count": 10958, "coverage": 1.0, "low_coverage_years": []},
+  "annual": [
+    {"year": 2023, "annual_mean_daily_max_c": 30.19, "anomaly_c": -0.47, "observation_count": 365, "expected_count": 365, "coverage": 1.0, "status": "complete", "warnings": []}
+  ],
+  "summary": {"years_in_window": 16, "complete_years": 16, "mean_anomaly_c": -0.21, "max_anomaly_year": 2010, "positive_years": 5, "negative_years": 11, "...": "..."},
+  "data_quality": {"analysis_coverage": 1.0, "missing_day_count": 0, "warnings": ["analysis_overlaps_baseline"]}
+}
+```
+
+(Abridged. Values are from a real local run against the Open-Meteo archive and were cross-checked against an independent calculation from the stored records.)
+
+- **Parameters and errors** are those of `/api/heatwaves` (no `rolling_window_years`): `422` invalid coordinates, dates or baseline, **or insufficient baseline data** (under 90% valid baseline days; no result is invented), `429`, `502`/`503`/`504`. Error bodies never include internals.
+- **Year `status`:** `complete` (whole year requested, at least 95% valid days), `low_coverage`, `partial_year`, `no_data`. Only complete years get `anomaly_c`; the others report their mean (or `null`) but no anomaly. Missing days are excluded, never counted as zero.
+- **Data reuse:** daily values come from `weather_records` through the heatwave ingestion path, so a location analysed for heatwaves needs no new upstream request, identical simultaneous requests share one fetch, and the part of the window inside the baseline is not loaded twice. No new collection, index or persisted result.
+- **Rate limit:** its own bucket with the `RATE_LIMIT_HEATWAVE_REQUESTS_PER_MINUTE` limit (20/min by default), because a cold request costs as much as a heatwave one.
+- **Multi-location comparison needs no batch endpoint:** the frontend calls this endpoint and `/api/heatwaves` once per location (two locations at a time).
+
+Limitations: the baseline mean is a mean of daily values (not of annual means); the same single-grid-cell, UTC-day, reanalysis caveats as the heatwave method apply; years inside the baseline are compared with an average they helped set (`analysis_overlaps_baseline`); an anomaly says nothing about cause. A complete warm range is served by the shared indexed range-read path described in [Performance](#performance-phase-6-and-91).
+
 ## Production hardening (Phase 6)
 
 None of this changes the heatwave or trend methods, the stored data, or the shape of successful responses.
@@ -98,7 +139,7 @@ All values are environment variables (or `.env`); `.env.example` lists them with
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:5173` | Comma-separated browser origins. Set the deployed frontend origin. `*` is accepted but logs a warning. |
 | `RATE_LIMIT_ENABLED` | `true` | Per-client-IP sliding window on `/api/*` |
 | `RATE_LIMIT_REQUESTS_PER_MINUTE` | `60` | Limit for `/api/weather` |
-| `RATE_LIMIT_HEATWAVE_REQUESTS_PER_MINUTE` | `20` | Separate, stricter bucket for `/api/heatwaves` (each cold request can cost about 31 upstream calls) |
+| `RATE_LIMIT_HEATWAVE_REQUESTS_PER_MINUTE` | `20` | Separate, stricter limit for `/api/heatwaves` and, in its own bucket, `/api/temperature-anomalies` (each cold request can cost about 31 upstream calls) |
 | `TRUST_PROXY_HEADERS` | `false` | Use the last `X-Forwarded-For` entry as the client. Enable only behind your own proxy; otherwise the header is spoofable. |
 | `WEATHER_FETCH_CONCURRENCY` | `4` (1 to 8) | Process-wide cap on simultaneous Open-Meteo requests. `1` = fully sequential. |
 | `OPEN_METEO_TIMEOUT_SECONDS` / `OPEN_METEO_MAX_RETRIES` | `10` / `2` | Read timeout per attempt (connect timeout 5 s); retries for transient failures |
@@ -124,7 +165,7 @@ All values are environment variables (or `.env`); `.env.example` lists them with
 - **Saving `analysis_results` is best effort.** It is a record of past runs and is never read back, so a failed write is logged and the computed analysis is still returned.
 - **Shutdown** closes the HTTP client and the MongoDB client.
 
-### Performance (Phase 6)
+### Performance (Phase 6 and 9.1)
 
 - Yearly chunks are fetched by a bounded thread pool (`WEATHER_FETCH_CONCURRENCY`), and a process-wide semaphore keeps the total in-flight Open-Meteo requests at that number however many API requests arrive. Results are merged in chunk order, so output is identical to sequential loading (tested, including a day with a null value).
 - Chunks cover disjoint dates, so concurrent upserts never touch the same document. Identical in-flight ingests (same location and range) are serialised: the second caller waits and then reads the first caller's data instead of fetching again.
@@ -132,21 +173,30 @@ All values are environment variables (or `.env`); `.env.example` lists them with
 - Repeat requests read from MongoDB only; days Open-Meteo returned as null are retried upstream (one single-day request), as before.
 - Indexes were reviewed. Every hot query is served by an index (checked with `explain()` in the tests). Added a unique index `uniq_analysis_key` on `analysis_results` (see Persistence).
 
-**Measured first-load latency** (`scripts/benchmark_live.py`, real Open-Meteo archive, local MongoDB 7, one analysis year plus the default 1991 to 2020 baseline = 31 upstream requests, run on 2026-10-14):
+#### Performance (Phase 9.1)
 
-| Location | Concurrency | Cold (s) | Warm (s, 3 runs) | Upstream requests cold / warm |
-|---|---|---|---|---|
-| Delhi | 1 (sequential) | 13.0 | 0.35 to 0.43 | 31 / 0 |
-| Delhi | 4 | 7.3 (includes one retried connect timeout) | 0.15 to 0.26 | 31 / 0 |
-| London | 4 | 5.3 | 0.20 to 0.33 | 31 / 0 |
-| London | 1 (sequential) | 12.7 | 0.36 to 0.60 | 31 / 0 |
-| London | 4 | 4.5 | 0.25 to 0.28 | 31 / 0 |
+Phase 9.1 changes only the warm data-access path. For a complete requested range, it reads `weather_records` once with the indexed `(location_key, date)` range query instead of issuing a record query and ingestion-cache lookup per yearly chunk. Cold or incomplete ranges retain the existing yearly ingestion path, so scientific calculations and upstream-fetch behaviour are unchanged.
 
-Concurrency 4 cuts the cold time by about 2.4 to 2.8x in the clean runs, not 4x: Open-Meteo answers each request a little slower under parallel load (mean 0.3 to 0.5 s against 0.2 s). In all five runs the stored data matched: the warm result equalled the cold result, and sequential and concurrent runs gave the same threshold and events. A warm request is about 0.2 to 0.4 s, split roughly into 0.2 s of MongoDB reads (about 11,000 documents) and 0.07 s of baseline computation; this was left as is. The sequential rows use the new pooled client and retry logic, so they approximate, rather than exactly reproduce, the pre-Phase-6 code.
+**Verified isolated benchmark results:**
 
-Against MongoDB Atlas (one cold run and repeated warm runs, 2026-10-18) a cold analysis took 41.65 s and warm ones 1.12 to 1.35 s, against 5 to 7 s and 0.2 to 0.4 s with a local MongoDB above. The extra time is presumably network round trips to the remote database; the split between writes and reads was not profiled.
+| Warm scenario | Phase 9.1 improvement |
+|---|---|
+| Single-location heatwave analysis | 31% lower latency |
+| Single-location temperature-anomaly analysis | 21% lower latency |
+| Two-city comparison | 45% lower latency |
+| Four-city comparison | 47% lower latency |
 
-Not measured: behaviour under sustained parallel load from many clients, higher concurrency values (5 to 8), sustained load against a remote MongoDB, and how Open-Meteo's own weighted call limits react to repeated cold runs. 31 requests per cold run should be well inside Open-Meteo's free-tier limits (check their current terms; the limits were not looked up or approached here).
+These are controlled, isolated benchmark results for the optimized warm path. They are relative improvements, not public-production latency, throughput, capacity, or SLO measurements.
+
+**Cold performance:** not re-benchmarked for Phase 9.1. A cold or incomplete range still follows the existing yearly Open-Meteo ingestion path, bounded by `WEATHER_FETCH_CONCURRENCY`; the warm-path improvement must not be used to estimate its latency. Production cold performance has not been measured.
+
+#### Historical weather caching policy
+
+`weather_records` is the durable, authoritative cache for normal reads. If every requested date is present, the service returns that complete range even when the related `ingestion_cache` TTL document has expired or been removed. The TTL metadata is still written for ingestion bookkeeping, but it does not trigger automatic refresh of a complete historical range.
+
+Open-Meteo may revise historical/reanalysis data, particularly recent weeks. Consequently, stored values reflect the upstream response at ingestion time until a deliberately requested refresh occurs. There is currently no API or automatic job for cache invalidation or refresh; that is a future enhancement. Missing, null, or invalid dates are not considered complete and continue through the existing re-fetch path.
+
+Not measured: hosted-production behaviour, sustained parallel load from many clients, higher concurrency values (5 to 8), sustained load against a remote MongoDB, and how Open-Meteo's own weighted call limits react to repeated cold runs. 31 requests per cold run should be well inside Open-Meteo's free-tier limits (check their current terms; the limits were not looked up or approached here).
 
 ### Persistence of analysis results
 

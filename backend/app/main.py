@@ -11,6 +11,7 @@ from app.errors import register_exception_handlers
 from app.logging_config import configure_logging
 from app.middleware import RateLimiter, RequestContextMiddleware
 from app.routers.analysis import router as analysis_router
+from app.routers.anomaly import router as anomaly_router
 from app.routers.weather import router as weather_router
 from app.services.weather_service import close_http_client
 
@@ -59,6 +60,7 @@ def create_app() -> FastAPI:
     )
     app.include_router(weather_router)
     app.include_router(analysis_router)
+    app.include_router(anomaly_router)
 
     @app.get("/")
     def root():

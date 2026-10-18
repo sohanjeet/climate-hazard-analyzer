@@ -86,7 +86,7 @@ def test_ingestion_normalizes_and_bulk_upserts():
     assert len(database.weather_records.bulk_write.call_args.args[0]) == 2
 
 
-def test_cache_hit_avoids_external_call():
+def test_complete_persisted_range_avoids_external_call_without_cache_lookup():
     database = db()
     now = datetime.now(timezone.utc)
     database.ingestion_cache.find_one.return_value = {"complete": True, "expires_at": now}
@@ -99,6 +99,7 @@ def test_cache_hit_avoids_external_call():
     result = service.ingest(1, 2, date(2024, 1, 1), date(2024, 1, 1))
     assert result["cache_hit"] is True
     service._fetch.assert_not_called()
+    database.ingestion_cache.find_one.assert_not_called()
 
 
 def test_missing_temperature_is_not_claimed_complete():

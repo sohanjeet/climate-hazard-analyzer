@@ -349,7 +349,27 @@ class HeatwaveService:
 
     def _load_series(self, latitude: float, longitude: float, start: date, end: date
                      ) -> tuple[dict[date, float], set[date], list[str]]:
-        """Load [start, end] one calendar year at a time (each chunk <= 366 days)."""
+        """Load [start, end], reading an already-warm range with one indexed query.
+
+        Cold and partially populated ranges retain the established yearly ingestion
+        path (and its <=366-day upstream request limit).  A complete warm range used
+        to issue one record query and one ingestion-cache query *per year*; the
+        durable record store lets us answer it with one range query instead.
+        """
+        if isinstance(self.weather, WeatherService):
+            existing = self.weather.stored_records(latitude, longitude, start, end)
+            expected = _days_in_range(start, end)
+            if len(existing) == expected:
+                series = {
+                    day: value
+                    for day, record in existing.items()
+                    if math.isfinite(value := float(record["temperature_max_c"]))
+                }
+                # Stored documents pass WeatherService's finite-value validation;
+                # keep the fallback correct if legacy data ever does not.
+                if len(series) == expected:
+                    return series, set(), []
+
         series: dict[date, float] = {}
         missing: set[date] = set()
         warnings: list[str] = []
@@ -369,6 +389,30 @@ class HeatwaveService:
             warnings.extend(result["warnings"])
         return series, missing, warnings
 
+    def _load_analysis_series(self, latitude: float, longitude: float, start: date, end: date,
+                              baseline_series: Mapping[date, float], baseline_first: date,
+                              baseline_last: date) -> tuple[dict[date, float], set[date], list[str]]:
+        """Reuse the baseline slice when the requested analysis overlaps it."""
+        series = {
+            day: value for day, value in baseline_series.items()
+            if max(start, baseline_first) <= day <= min(end, baseline_last)
+        }
+        warnings: list[str] = []
+        for part_start, part_end in ((start, min(end, baseline_first - timedelta(days=1))),
+                                     (max(start, baseline_last + timedelta(days=1)), end)):
+            if part_start > part_end:
+                continue
+            part, _, part_warnings = self._load_series(latitude, longitude, part_start, part_end)
+            series.update(part)
+            warnings.extend(part_warnings)
+        requested = {start + timedelta(days=offset) for offset in range(_days_in_range(start, end))}
+        return series, requested - set(series), warnings
+
+    def load_series(self, latitude: float, longitude: float, start: date, end: date
+                    ) -> tuple[dict[date, float], set[date], list[str]]:
+        """Public entry for other services (anomalies) that share this ingestion path and its caches."""
+        return self._load_series(latitude, longitude, start, end)
+
     def analyze(self, latitude: float, longitude: float, start_date: date, end_date: date,
                 baseline_start_year: int | None = None, baseline_end_year: int | None = None,
                 rolling_window_years: int | None = None) -> dict[str, Any]:
@@ -386,7 +430,8 @@ class HeatwaveService:
         baseline = compute_baseline(baseline_series, b_start, b_end, s.heatwave_percentile,
                                     s.heatwave_baseline_min_coverage)
 
-        series, missing, weather_warnings = self._load_series(latitude, longitude, start_date, end_date)
+        series, missing, weather_warnings = self._load_analysis_series(
+            latitude, longitude, start_date, end_date, baseline_series, date(b_start, 1, 1), date(b_end, 12, 31))
         if not series:
             raise HeatwaveServiceError("no valid temperature observations in analysis window", 422)
 

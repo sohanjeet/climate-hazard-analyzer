@@ -1,6 +1,6 @@
 import { ApiError, kindForStatus, parseErrorBody, parseRetryAfter } from './errors'
-import { parseHeatwaveAnalysis } from './parse'
-import type { HeatwaveAnalysis, HeatwaveRequest } from './types'
+import { parseHeatwaveAnalysis, parseTemperatureAnomalies } from './parse'
+import type { AnomalyRequest, HeatwaveAnalysis, HeatwaveRequest, TemperatureAnomalies } from './types'
 
 /** A cold analysis takes ~5-15 s; the backend's own worst case is ~33 s per chunk. Give up well after that. */
 export const REQUEST_TIMEOUT_MS = 90_000
@@ -25,6 +25,18 @@ export function buildHeatwaveUrl(request: HeatwaveRequest, baseUrl: string = get
   return `${baseUrl}/api/heatwaves?${params.toString()}`
 }
 
+export function buildAnomalyUrl(request: AnomalyRequest, baseUrl: string = getApiBaseUrl()): string {
+  const params = new URLSearchParams({
+    latitude: String(request.latitude),
+    longitude: String(request.longitude),
+    start_date: request.startDate,
+    end_date: request.endDate,
+  })
+  if (request.baselineStartYear !== undefined) params.set('baseline_start_year', String(request.baselineStartYear))
+  if (request.baselineEndYear !== undefined) params.set('baseline_end_year', String(request.baselineEndYear))
+  return `${baseUrl}/api/temperature-anomalies?${params.toString()}`
+}
+
 interface FetchOptions {
   signal?: AbortSignal
   timeoutMs?: number
@@ -32,9 +44,20 @@ interface FetchOptions {
   fetchImpl?: typeof fetch
 }
 
-export async function fetchHeatwaves(request: HeatwaveRequest, options: FetchOptions = {}): Promise<HeatwaveAnalysis> {
-  const { signal, timeoutMs = REQUEST_TIMEOUT_MS, baseUrl, fetchImpl = fetch } = options
-  const url = buildHeatwaveUrl(request, baseUrl)
+export function fetchHeatwaves(request: HeatwaveRequest, options: FetchOptions = {}): Promise<HeatwaveAnalysis> {
+  return getJson(buildHeatwaveUrl(request, options.baseUrl), parseHeatwaveAnalysis, options)
+}
+
+export function fetchTemperatureAnomalies(
+  request: AnomalyRequest,
+  options: FetchOptions = {},
+): Promise<TemperatureAnomalies> {
+  return getJson(buildAnomalyUrl(request, options.baseUrl), parseTemperatureAnomalies, options)
+}
+
+/** GET `url`, map failures onto ApiError kinds, and validate a 2xx body with `parse`. */
+async function getJson<T>(url: string, parse: (body: unknown) => T, options: FetchOptions): Promise<T> {
+  const { signal, timeoutMs = REQUEST_TIMEOUT_MS, fetchImpl = fetch } = options
 
   const controller = new AbortController()
   let timedOut = false
@@ -86,7 +109,7 @@ export async function fetchHeatwaves(request: HeatwaveRequest, options: FetchOpt
     }
 
     try {
-      return parseHeatwaveAnalysis(body)
+      return parse(body)
     } catch (error) {
       if (error instanceof ApiError) {
         throw new ApiError(error.kind, error.message, { status: response.status, requestId })

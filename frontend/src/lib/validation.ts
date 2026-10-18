@@ -70,7 +70,7 @@ export function fullCalendarYears(start: string, end: string): number {
   return Math.max(0, last - first + 1)
 }
 
-function parseCoordinate(raw: string, label: string, min: number, max: number): { value?: number; error?: string } {
+export function parseCoordinate(raw: string, label: string, min: number, max: number): { value?: number; error?: string } {
   const text = raw.trim()
   if (!text) return { error: `Enter a ${label}.` }
   if (!DECIMAL.test(text)) return { error: `${capitalize(label)} must be a number, for example 28.6139.` }
@@ -85,19 +85,15 @@ function capitalize(text: string): string {
   return text.charAt(0).toUpperCase() + text.slice(1)
 }
 
-export function validateForm(
-  values: FormValues,
+/** Shared by the single-location form and the comparison view: the date rules the backend enforces. */
+export function validateDateRange(
+  startDate: string,
+  endDate: string,
   now: Date = new Date(),
-): { errors: FormErrors; request: ValidatedRequest | null } {
-  const errors: FormErrors = {}
+): Pick<FormErrors, 'startDate' | 'endDate'> {
+  const errors: Pick<FormErrors, 'startDate' | 'endDate'> = {}
   const archiveEnd = latestArchiveDate(now)
 
-  const lat = parseCoordinate(values.latitude, 'latitude', LIMITS.latitude.min, LIMITS.latitude.max)
-  if (lat.error) errors.latitude = lat.error
-  const lon = parseCoordinate(values.longitude, 'longitude', LIMITS.longitude.min, LIMITS.longitude.max)
-  if (lon.error) errors.longitude = lon.error
-
-  const { startDate, endDate } = values
   if (!startDate) errors.startDate = 'Choose a start date.'
   else if (!isRealIsoDate(startDate)) errors.startDate = 'Enter a valid start date.'
   else if (startDate < LIMITS.archiveStart) errors.startDate = 'The archive begins on 1 January 1940.'
@@ -117,6 +113,22 @@ export function validateForm(
       errors.endDate = `The range can span at most ${LIMITS.maxAnalysisYears} calendar years.`
     }
   }
+  return errors
+}
+
+export function validateForm(
+  values: FormValues,
+  now: Date = new Date(),
+): { errors: FormErrors; request: ValidatedRequest | null } {
+  const errors: FormErrors = {}
+  const { startDate, endDate } = values
+
+  const lat = parseCoordinate(values.latitude, 'latitude', LIMITS.latitude.min, LIMITS.latitude.max)
+  if (lat.error) errors.latitude = lat.error
+  const lon = parseCoordinate(values.longitude, 'longitude', LIMITS.longitude.min, LIMITS.longitude.max)
+  if (lon.error) errors.longitude = lon.error
+
+  Object.assign(errors, validateDateRange(values.startDate, values.endDate, now))
 
   const windowText = values.rollingWindowYears.trim()
   const windowYears = Number(windowText)

@@ -18,8 +18,9 @@ logger = logging.getLogger("app.request")
 # Only these paths are logged verbatim; anything else is logged as "unmatched" so a crafted URL
 # cannot inject log lines.
 KNOWN_PATHS = frozenset({"/", "/health", "/health/db", "/api/weather", "/api/heatwaves",
-                         "/docs", "/redoc", "/openapi.json"})
+                         "/api/temperature-anomalies", "/docs", "/redoc", "/openapi.json"})
 HEATWAVE_PATH = "/api/heatwaves"
+ANOMALY_PATH = "/api/temperature-anomalies"
 
 
 class RateLimiter:
@@ -80,10 +81,12 @@ class RequestContextMiddleware(BaseHTTPMiddleware):
 
         response = None
         if settings.rate_limit_enabled and path.startswith("/api/") and request.method != "OPTIONS":
-            heatwave = path == HEATWAVE_PATH
-            limit = (settings.rate_limit_heatwave_requests_per_minute if heatwave
+            # Both analysis endpoints can trigger cold upstream ingestion, so each gets the stricter limit in
+            # its own bucket (a comparison run calls both once per location).
+            heavy = {HEATWAVE_PATH: "heatwaves", ANOMALY_PATH: "anomalies"}.get(path)
+            limit = (settings.rate_limit_heatwave_requests_per_minute if heavy
                      else settings.rate_limit_requests_per_minute)
-            bucket = f"{'heatwaves' if heatwave else 'api'}:{_client_id(request, settings.trust_proxy_headers)}"
+            bucket = f"{heavy or 'api'}:{_client_id(request, settings.trust_proxy_headers)}"
             retry_after = request.app.state.rate_limiter.check(bucket, limit)
             if retry_after is not None:
                 response = JSONResponse(

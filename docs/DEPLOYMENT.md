@@ -57,6 +57,7 @@ The app is a single-page app with no client-side routing, so no rewrite rules ar
 ## Pre-flight checklist (after deploying)
 
 1. `GET <backend>/health` returns `{"status":"healthy"}` and `GET <backend>/health/db` the same.
-2. Open the Vercel URL, run one analysis for the default location (a cold request took 41.65 s against Atlas, 5 to 15 s against a local MongoDB; the platform's request timeout must allow it and the browser gives up at 90 s).
+2. Open the Vercel URL and run one analysis for the default location. Cold requests need upstream ingestion and were not re-benchmarked in Phase 9.1. Ensure the platform timeout allows the real cold path (the browser gives up at 90 s), then measure the hosted result before launch.
 3. The browser console shows no CORS error (if it does, `CORS_ALLOWED_ORIGINS` does not match the Vercel origin exactly).
-4. Repeat the analysis and confirm it is fast (served from MongoDB; 1.12 to 1.35 s measured against Atlas from a local backend).
+4. Repeat the analysis and confirm it is served from MongoDB. Phase 9.1 improved isolated warm benchmarks by 31% for heatwave analysis and 21% for anomaly analysis; measure actual hosted latency rather than treating those benchmark improvements as a production SLO.
+5. In the Compare view, verify two and four locations. The warm isolated benchmark improved them by 45% and 47%, respectively; new locations remain cold until their historical ranges are ingested.

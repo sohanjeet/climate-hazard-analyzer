@@ -1,7 +1,7 @@
 """Bounded-concurrency regression tests (offline; threads, no real network or database)."""
 import threading
 import time
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import MagicMock
 
 import httpx
@@ -9,7 +9,7 @@ import pytest
 
 from app.config import Settings
 from app.services.heatwave_service import HeatwaveService, year_chunks
-from app.services.weather_service import WeatherService, WeatherServiceError, _KeyedLocks
+from app.services.weather_service import WeatherService, WeatherServiceError, _KeyedLocks, location_key
 
 
 class Gauge:
@@ -89,6 +89,25 @@ def test_single_chunk_does_not_spawn_a_pool():
     gauge = Gauge()
     heatwave_service(FakeWeather(gauge), 8)._load_series(0, 0, date(2023, 1, 1), date(2023, 12, 31))
     assert gauge.started == 1 and len(year_chunks(date(2023, 1, 1), date(2023, 12, 31))) == 1
+
+
+def test_warm_series_uses_one_weather_records_query_for_the_whole_range():
+    """A 30-year warm baseline must not fan out into 30 record/cache lookups."""
+    db = MagicMock()
+    db.__getitem__.side_effect = lambda name: getattr(db, name)
+    start, end = date(2010, 1, 1), date(2011, 12, 31)
+    db.weather_records.find.return_value = [
+        {"location_key": location_key(1, 2), "date": day, "temperature_max_c": 20.0}
+        for day in (start + timedelta(days=i) for i in range((end - start).days + 1))
+    ]
+    weather = WeatherService(db, Settings(weather_fetch_concurrency=4))
+    service = HeatwaveService(db, Settings(weather_fetch_concurrency=4), weather_service=weather)
+
+    series, missing, warnings = service._load_series(1, 2, start, end)
+
+    assert len(series) == 730 and not missing and not warnings
+    assert db.weather_records.find.call_count == 1
+    db.ingestion_cache.find_one.assert_not_called()
 
 
 def test_concurrency_setting_is_validated():

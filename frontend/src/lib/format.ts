@@ -76,17 +76,33 @@ export const CLASSIFICATION_LABEL: Record<TrendClassification, string> = {
 }
 
 /** Explains a `data_quality.warnings` / `trend.warnings` code in plain language. */
-export function describeWarning(code: string, baseline?: Pick<BaselineInfo, 'start_year' | 'end_year'>): string {
+export function describeWarning(
+  code: string,
+  baseline?: Pick<BaselineInfo, 'start_year' | 'end_year'>,
+  context: 'heatwave' | 'anomaly' = 'heatwave',
+): string {
   const [name, arg] = code.split(':')
   switch (name) {
     case 'analysis_missing_days':
+      if (context === 'anomaly') {
+        return `${arg} day${arg === '1' ? '' : 's'} in the period have no valid temperature. They are left out of the averages, never filled in or counted as zero.`
+      }
       return `${arg} day${arg === '1' ? '' : 's'} in the analysis window have no valid temperature. Missing days are never filled in and they end a heatwave run, so counts may be underestimates.`
+    case 'years_without_anomaly':
+      return `${arg} year${arg === '1' ? '' : 's'} in the period get no anomaly because the year is partial or has too many missing days. Their means appear in the table but are not plotted.`
     case 'analysis_overlaps_baseline':
+      if (context === 'anomaly') {
+        return baseline
+          ? `The period overlaps the ${baseline.start_year}–${baseline.end_year} baseline, so those years are compared with an average they helped set. This pulls their anomalies toward zero.`
+          : 'The period overlaps the baseline, so those years are compared with an average they helped set.'
+      }
       return baseline
         ? `The analysis window overlaps the ${baseline.start_year}–${baseline.end_year} baseline. Those years are compared with a threshold they helped set, which flattens trends.`
         : 'The analysis window overlaps the baseline period. Those years are compared with a threshold they helped set, which flattens trends.'
     case 'baseline_year_low_coverage':
-      return `Baseline year ${arg} has fewer than 90% valid days, so the threshold rests on less data from that year.`
+      return context === 'anomaly'
+        ? `Baseline year ${arg} has fewer than 90% valid days, so the baseline mean rests on less data from that year.`
+        : `Baseline year ${arg} has fewer than 90% valid days, so the threshold rests on less data from that year.`
     case 'incomplete_years_excluded':
       return 'Incomplete years are shown in the charts but excluded from trends and rolling averages.'
     case 'duplicate_date':

@@ -1,9 +1,11 @@
 import type {
+  AnnualAnomaly,
   AnnualMetrics,
   HeatwaveAnalysis,
   HeatwaveEvent,
   MetricName,
   RollingPoint,
+  TemperatureAnomalies,
   TrendAnalysis,
   TrendClassification,
   TrendMetric,
@@ -36,6 +38,8 @@ export interface FixtureOptions {
   warnings?: string[]
   baselineLowCoverageYears?: number[]
   rollingWindow?: number
+  latitude?: number
+  longitude?: number
 }
 
 const METRIC_DEFS: { metric: MetricName; label: string; unit: string; read: (a: AnnualMetrics) => number | null }[] = [
@@ -199,8 +203,8 @@ export function makeAnalysis(options: FixtureOptions = {}): HeatwaveAnalysis {
   return {
     location_key: '28.6139,77.2090',
     analysis_type: 'heatwave',
-    latitude: 28.6139,
-    longitude: 77.209,
+    latitude: options.latitude ?? 28.6139,
+    longitude: options.longitude ?? 77.209,
     start_date: '2018-01-01',
     end_date: '2024-12-31',
     method: {
@@ -246,6 +250,119 @@ export function makeAnalysis(options: FixtureOptions = {}): HeatwaveAnalysis {
     data_quality: {
       analysis_coverage: options.missingDates?.length ? 0.99 : 1,
       missing_dates: options.missingDates ?? [],
+      warnings: options.warnings ?? [],
+    },
+    source: 'open-meteo-archive',
+    computed_at: '2026-10-14T12:30:00Z',
+  }
+}
+
+export interface AnomalyFixtureOptions {
+  /** Whole years requested but with too many missing days: mean reported, anomaly withheld. */
+  lowCoverageYears?: number[]
+  /** Years without a single valid observation. */
+  unobservedYears?: number[]
+  /** Years only partly inside the requested window. */
+  partialYears?: number[]
+  warnings?: string[]
+  baselineMean?: number
+  /** Added to every annual anomaly, to tell fixtures for different places apart. */
+  shift?: number
+  latitude?: number
+  longitude?: number
+}
+
+const ANOMALIES: Record<number, number> = { 2018: 0.4, 2019: -0.3, 2020: 0.9, 2021: 0, 2022: 1.2, 2023: 1.6, 2024: 1.1 }
+
+/** Synthetic response shaped like GET /api/temperature-anomalies. The numbers are made up for UI tests. */
+export function makeAnomalies(options: AnomalyFixtureOptions = {}): TemperatureAnomalies {
+  const baseline = options.baselineMean ?? 30.8
+  const shift = options.shift ?? 0
+  const round = (v: number) => Math.round(v * 100) / 100
+  const annual: AnnualAnomaly[] = Object.keys(ANOMALIES).map(Number).map((year) => {
+    const expected = year % 4 === 0 ? 366 : 365
+    const unobserved = options.unobservedYears?.includes(year) ?? false
+    const low = options.lowCoverageYears?.includes(year) ?? false
+    const partial = options.partialYears?.includes(year) ?? false
+    const mean = round(baseline + ANOMALIES[year] + shift)
+    if (unobserved) {
+      return { year, annual_mean_daily_max_c: null, anomaly_c: null, observation_count: 0, expected_count: expected, coverage: 0, status: 'no_data', warnings: ['no_valid_observations'] }
+    }
+    if (low || partial) {
+      const observed = Math.round(expected * (partial ? 0.5 : 0.6))
+      return {
+        year,
+        annual_mean_daily_max_c: mean,
+        anomaly_c: null,
+        observation_count: observed,
+        expected_count: partial ? observed : expected,
+        coverage: partial ? 1 : 0.6,
+        status: partial ? 'partial_year' : 'low_coverage',
+        warnings: [partial ? 'partial_year' : 'low_coverage'],
+      }
+    }
+    return {
+      year,
+      annual_mean_daily_max_c: mean,
+      anomaly_c: round(ANOMALIES[year] + shift),
+      observation_count: expected,
+      expected_count: expected,
+      coverage: 1,
+      status: 'complete',
+      warnings: [],
+    }
+  })
+  const complete = annual.filter((a) => a.status === 'complete')
+  const anomalies = complete.map((a) => a.anomaly_c as number)
+  const mean = (values: number[]) => (values.length ? round(values.reduce((s, v) => s + v, 0) / values.length) : null)
+  const warm = complete.length ? complete.reduce((best, a) => ((a.anomaly_c as number) > (best.anomaly_c as number) ? a : best)) : null
+  const cool = complete.length ? complete.reduce((best, a) => ((a.anomaly_c as number) < (best.anomaly_c as number) ? a : best)) : null
+  return {
+    location_key: '28.6139,77.2090',
+    analysis_type: 'temperature_anomaly',
+    latitude: options.latitude ?? 28.6139,
+    longitude: options.longitude ?? 77.209,
+    start_date: '2018-01-01',
+    end_date: '2024-12-31',
+    method: {
+      method_version: 'temperature-anomaly-v1',
+      metric: 'annual_mean_of_daily_maximum_temperature_2m',
+      baseline_statistic: 'mean_of_valid_daily_maxima_over_baseline_period',
+      anomaly_formula: 'annual_mean_daily_max_c - baseline_mean_daily_max_c',
+      unit: 'celsius',
+      temperature_decimals: 2,
+      coverage_decimals: 4,
+      baseline_min_coverage: 0.9,
+      year_min_coverage: 0.95,
+      missing_value_policy: 'excluded_never_filled',
+      incomplete_year_policy: 'annual_mean_reported_anomaly_withheld',
+    },
+    baseline: {
+      start_year: 1991,
+      end_year: 2020,
+      mean_daily_max_c: baseline,
+      observation_count: 10958,
+      expected_count: 10958,
+      coverage: 1,
+      low_coverage_years: [],
+    },
+    annual,
+    summary: {
+      years_in_window: annual.length,
+      complete_years: complete.length,
+      mean_anomaly_c: mean(anomalies),
+      mean_annual_daily_max_c: mean(complete.map((a) => a.annual_mean_daily_max_c as number)),
+      max_anomaly_c: warm?.anomaly_c ?? null,
+      max_anomaly_year: warm?.year ?? null,
+      min_anomaly_c: cool?.anomaly_c ?? null,
+      min_anomaly_year: cool?.year ?? null,
+      positive_years: anomalies.filter((v) => v > 0).length,
+      negative_years: anomalies.filter((v) => v < 0).length,
+      zero_years: anomalies.filter((v) => v === 0).length,
+    },
+    data_quality: {
+      analysis_coverage: 1,
+      missing_day_count: 0,
       warnings: options.warnings ?? [],
     },
     source: 'open-meteo-archive',

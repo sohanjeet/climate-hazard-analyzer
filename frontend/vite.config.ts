@@ -25,6 +25,12 @@ export default defineConfig(({ command, mode }) => {
       globals: true,
       setupFiles: ['./src/test/setup.ts'],
       css: false,
+      // Windows CI/desktop environments can stall while the default fork pool creates a worker per CPU.
+      // The suite is DOM-heavy and has shared module mocks, so a single thread is deterministic and avoids
+      // resource exhaustion without changing production bundling or application behaviour.
+      pool: 'threads',
+      maxWorkers: 1,
+      fileParallelism: false,
       // Measured on this suite: the slowest test is ~0.9s (2.2s for the 429 countdown, which waits out a real 2s
       // Retry-After). A starved machine (cold caches, antivirus scans, a busy CPU) slows jsdom + user-event
       // 10-20x, which blew through Vitest's 5s default on otherwise trivial tests. The budget is for stalls, not

@@ -163,6 +163,16 @@ class WeatherService:
             result[doc["date"]] = doc
         return result
 
+    def stored_records(self, latitude: float, longitude: float, start: date, end: date) -> dict[date, dict[str, Any]]:
+        """Return persisted observations for one location/date range in one indexed query.
+
+        Analysis services use this as a warm-path fast path.  It deliberately does not
+        consult ``ingestion_cache``: weather records themselves are the authoritative,
+        durable cache and their unique ``(location_key, date)`` index guarantees that a
+        complete range can be served without a second metadata round trip.
+        """
+        return self._stored_records(location_key(latitude, longitude), start, end)
+
     def _fetch(self, latitude: float, longitude: float, start: date, end: date) -> dict[str, Any]:
         params = {
             "latitude": _coordinate(latitude),
@@ -314,8 +324,10 @@ class WeatherService:
         loc = location_key(latitude, longitude)
         requested = set(_date_range(start, end))
         existing = self._stored_records(loc, start, end)
-        cache = self._db()[database.INGESTION_CACHE].find_one({"cache_key": key, "expires_at": {"$gt": datetime.now(timezone.utc)}})
-        if cache and cache.get("complete") and requested.issubset(existing):
+        # A complete persisted range is the durable cache.  Checking the separate
+        # TTL metadata document used to add one MongoDB round trip to every warm
+        # yearly chunk, even though it cannot make these records more complete.
+        if requested.issubset(existing):
             records = [existing[d] for d in sorted(requested)]
             return self._response(records, start, end, True, [])
         missing_dates = requested - set(existing)
