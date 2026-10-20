@@ -52,7 +52,7 @@ Target layout: MongoDB Atlas (database) <- Render (FastAPI backend) <- Vercel (s
 
 Production builds fail if `VITE_API_BASE_URL` is missing, blank or not an http(s) URL. On Vercel (`VERCEL` set) they also fail for a localhost or plain-`http://` value. Locally a localhost value only prints a warning, so `npm run build && npm run preview` keeps working. The check lives in `frontend/src/lib/buildEnv.ts` and is wired up in `frontend/vite.config.ts`.
 
-The app is a single-page app with no client-side routing, so no rewrite rules are needed.
+The app is a single-page app with client-side routes (`/explore/global`, `/explore/india`, `/compare/cities`, `/compare/states`, `/anomalies`, `/methodology`). `frontend/vercel.json` rewrites every path that is not a built file to `index.html`, so deep links and reloads work. Vercel checks the filesystem first, so `/assets/*` are still served as files. Another static host needs the same SPA fallback. `vite preview` and `vite dev` already do this.
 
 ## Pre-flight checklist (after deploying)
 

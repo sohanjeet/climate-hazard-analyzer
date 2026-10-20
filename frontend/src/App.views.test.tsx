@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 import App from '@/App'
@@ -65,19 +65,24 @@ describe('anomalies in the single-location view', () => {
   })
 })
 
-describe('switching between analyzing and comparing', () => {
-  it('shows the view switcher with the current view marked', () => {
+describe('switching between the dashboard and the city comparison', () => {
+  const mainNav = () => screen.getByRole('navigation', { name: 'Main' })
+
+  it('shows the main navigation with the current page marked', () => {
     setup()
-    const views = screen.getByRole('navigation', { name: 'Views' })
-    expect(within(views).getByRole('button', { name: 'Analyze' })).toHaveAttribute('aria-current', 'page')
-    expect(within(views).getByRole('button', { name: 'Compare' })).not.toHaveAttribute('aria-current')
+    expect(within(mainNav()).getByRole('link', { name: 'Dashboard' })).toHaveAttribute('aria-current', 'page')
+    expect(within(mainNav()).getByRole('link', { name: 'City Comparison' })).not.toHaveAttribute('aria-current')
+    expect(within(mainNav()).getAllByRole('link').map((l) => l.textContent)).toEqual([
+      'Dashboard', 'Global Explorer', 'India Explorer', 'City Comparison', 'State Comparison', 'Temperature Anomalies', 'Methodology',
+    ])
     expect(screen.queryByRole('heading', { name: 'Compare locations' })).toBeNull() // not mounted until opened
   })
 
   it('opens the comparison, runs it, and keeps the result when switching back and forth', async () => {
     const { user, comparisonFetchers } = setup()
-    await user.click(screen.getByRole('button', { name: 'Compare' }))
-    expect(screen.getByRole('button', { name: 'Compare' })).toHaveAttribute('aria-current', 'page')
+    await user.click(within(mainNav()).getByRole('link', { name: 'City Comparison' }))
+    expect(window.location.pathname).toBe('/compare/cities')
+    expect(within(mainNav()).getByRole('link', { name: 'City Comparison' })).toHaveAttribute('aria-current', 'page')
     expect(screen.getByRole('heading', { level: 1, name: 'Compare locations' })).toBeVisible()
     expect(screen.queryByRole('heading', { level: 1, name: 'Heatwave Trend Analyzer' })).toBeNull() // hidden, so not exposed
 
@@ -85,19 +90,30 @@ describe('switching between analyzing and comparing', () => {
     await waitFor(() => expect(screen.getAllByText(/Heatwave statistics: loaded/)).toHaveLength(2))
     expect(comparisonFetchers.heatwave).toHaveBeenCalledTimes(2)
 
-    await user.click(screen.getByRole('button', { name: 'Analyze' }))
+    await user.click(within(mainNav()).getByRole('link', { name: 'Dashboard' }))
+    expect(window.location.pathname).toBe('/')
     expect(screen.getByRole('heading', { level: 1, name: 'Heatwave Trend Analyzer' })).toBeVisible()
     expect(screen.queryByRole('heading', { level: 1, name: 'Compare locations' })).toBeNull()
 
-    await user.click(screen.getByRole('button', { name: 'Compare' }))
+    await user.click(within(mainNav()).getByRole('link', { name: 'City Comparison' }))
     expect(screen.getAllByText(/Heatwave statistics: loaded/)).toHaveLength(2) // still there
     expect(comparisonFetchers.heatwave).toHaveBeenCalledTimes(2) // and not fetched again
+  })
+
+  it('follows the browser back button', async () => {
+    const { user } = setup()
+    await user.click(within(mainNav()).getByRole('link', { name: 'City Comparison' }))
+    expect(screen.getByRole('heading', { level: 1, name: 'Compare locations' })).toBeVisible()
+    act(() => {
+      window.history.back()
+    })
+    await waitFor(() => expect(screen.getByRole('heading', { level: 1, name: 'Heatwave Trend Analyzer' })).toBeVisible())
   })
 
   it('points the skip link at the visible results area', async () => {
     const { user } = setup()
     expect(screen.getByRole('link', { name: 'Skip to results' })).toHaveAttribute('href', '#results')
-    await user.click(screen.getByRole('button', { name: 'Compare' }))
+    await user.click(within(mainNav()).getByRole('link', { name: 'City Comparison' }))
     expect(screen.getByRole('link', { name: 'Skip to results' })).toHaveAttribute('href', '#compare-results')
   })
 
@@ -106,7 +122,7 @@ describe('switching between analyzing and comparing', () => {
     await user.click(analyze())
     await screen.findByRole('heading', { name: 'Temperature anomalies' })
     expect(screen.getByRole('navigation', { name: 'Result sections' })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: 'Compare' }))
+    await user.click(within(mainNav()).getByRole('link', { name: 'City Comparison' }))
     expect(screen.queryByRole('navigation', { name: 'Result sections' })).toBeNull()
   })
 })

@@ -23,6 +23,12 @@ import type {
   AnomalySummary,
   AnomalyYearStatus,
   TemperatureAnomalies,
+  CoverageResponse,
+  CoverageStatus,
+  LocationCoverage,
+  LocationRole,
+  LocationsResponse,
+  ObservationLocation,
 } from './types'
 
 /**
@@ -408,4 +414,75 @@ export function parseTemperatureAnomalies(body: unknown): TemperatureAnomalies {
     }
     throw error
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Geography
+
+function wrap<T>(parse: () => T): T {
+  try {
+    return parse()
+  } catch (error) {
+    if (error instanceof ShapeError) throw new ApiError('invalid_response', error.message)
+    throw error
+  }
+}
+
+const SCOPES = ['observation_location'] as const
+const ROLES: readonly LocationRole[] = ['capital', 'major_city']
+const COVERAGE_STATUSES: readonly CoverageStatus[] = ['stored', 'partial', 'not_stored']
+
+function parseLocation(v: unknown, p: string): ObservationLocation {
+  const o = rec(v, p)
+  return {
+    id: str(o.id, `${p}.id`),
+    name: str(o.name, `${p}.name`),
+    latitude: num(o.latitude, `${p}.latitude`),
+    longitude: num(o.longitude, `${p}.longitude`),
+    country_code: str(o.country_code, `${p}.country_code`),
+    country_name: str(o.country_name, `${p}.country_name`),
+    region_code: nullable(o.region_code, `${p}.region_code`, str),
+    region_name: nullable(o.region_name, `${p}.region_name`, str),
+    role: oneOf(o.role, `${p}.role`, ROLES),
+    role_note: nullable(o.role_note, `${p}.role_note`, str),
+  }
+}
+
+export function parseLocations(body: unknown): LocationsResponse {
+  return wrap(() => {
+    const o = rec(body, 'response')
+    return {
+      scope: oneOf(o.scope, 'scope', SCOPES),
+      scope_note: str(o.scope_note, 'scope_note'),
+      count: num(o.count, 'count'),
+      locations: arr(o.locations, 'locations', parseLocation),
+    }
+  })
+}
+
+function parseLocationCoverage(v: unknown, p: string): LocationCoverage {
+  const o = rec(v, p)
+  return {
+    location_id: str(o.location_id, `${p}.location_id`),
+    baseline_stored_days: num(o.baseline_stored_days, `${p}.baseline_stored_days`),
+    baseline_expected_days: num(o.baseline_expected_days, `${p}.baseline_expected_days`),
+    window_stored_days: num(o.window_stored_days, `${p}.window_stored_days`),
+    window_expected_days: num(o.window_expected_days, `${p}.window_expected_days`),
+    status: oneOf(o.status, `${p}.status`, COVERAGE_STATUSES),
+  }
+}
+
+export function parseCoverage(body: unknown): CoverageResponse {
+  return wrap(() => {
+    const o = rec(body, 'response')
+    return {
+      scope: oneOf(o.scope, 'scope', SCOPES),
+      start_date: isoDate(o.start_date, 'start_date'),
+      end_date: isoDate(o.end_date, 'end_date'),
+      baseline_start_year: num(o.baseline_start_year, 'baseline_start_year'),
+      baseline_end_year: num(o.baseline_end_year, 'baseline_end_year'),
+      status_note: str(o.status_note, 'status_note'),
+      locations: arr(o.locations, 'locations', parseLocationCoverage),
+    }
+  })
 }

@@ -1,6 +1,14 @@
 import { ApiError, kindForStatus, parseErrorBody, parseRetryAfter } from './errors'
-import { parseHeatwaveAnalysis, parseTemperatureAnomalies } from './parse'
-import type { AnomalyRequest, HeatwaveAnalysis, HeatwaveRequest, TemperatureAnomalies } from './types'
+import { parseCoverage, parseHeatwaveAnalysis, parseLocations, parseTemperatureAnomalies } from './parse'
+import type {
+  AnomalyRequest,
+  CoverageRequest,
+  CoverageResponse,
+  HeatwaveAnalysis,
+  HeatwaveRequest,
+  LocationsResponse,
+  TemperatureAnomalies,
+} from './types'
 
 /** A cold analysis takes ~5-15 s; the backend's own worst case is ~33 s per chunk. Give up well after that. */
 export const REQUEST_TIMEOUT_MS = 90_000
@@ -53,6 +61,35 @@ export function fetchTemperatureAnomalies(
   options: FetchOptions = {},
 ): Promise<TemperatureAnomalies> {
   return getJson(buildAnomalyUrl(request, options.baseUrl), parseTemperatureAnomalies, options)
+}
+
+/** Geography reads never ingest data and answer in well under a second; a slow one is a problem, not work. */
+export const GEOGRAPHY_TIMEOUT_MS = 20_000
+
+export function buildLocationsUrl(filter: { country?: string; region?: string } = {}, baseUrl: string = getApiBaseUrl()): string {
+  const params = new URLSearchParams()
+  if (filter.country) params.set('country', filter.country)
+  if (filter.region) params.set('region', filter.region)
+  const query = params.toString()
+  return `${baseUrl}/api/geography/locations${query ? `?${query}` : ''}`
+}
+
+export function buildCoverageUrl(request: CoverageRequest, baseUrl: string = getApiBaseUrl()): string {
+  const params = new URLSearchParams({ start_date: request.startDate, end_date: request.endDate })
+  if (request.country) params.set('country', request.country)
+  if (request.region) params.set('region', request.region)
+  return `${baseUrl}/api/geography/coverage?${params.toString()}`
+}
+
+export function fetchLocations(
+  filter: { country?: string; region?: string } = {},
+  options: FetchOptions = {},
+): Promise<LocationsResponse> {
+  return getJson(buildLocationsUrl(filter, options.baseUrl), parseLocations, { timeoutMs: GEOGRAPHY_TIMEOUT_MS, ...options })
+}
+
+export function fetchCoverage(request: CoverageRequest, options: FetchOptions = {}): Promise<CoverageResponse> {
+  return getJson(buildCoverageUrl(request, options.baseUrl), parseCoverage, { timeoutMs: GEOGRAPHY_TIMEOUT_MS, ...options })
 }
 
 /** GET `url`, map failures onto ApiError kinds, and validate a 2xx body with `parse`. */

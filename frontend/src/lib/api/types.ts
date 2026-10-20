@@ -284,3 +284,61 @@ export interface AnomalyRequest {
   baselineStartYear?: number
   baselineEndYear?: number
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// GET /api/geography/locations and /api/geography/coverage (backend/app/schemas/geography.py)
+
+/** Always "observation_location": values for these points are never country or state aggregates. */
+export type GeoScope = 'observation_location'
+
+export type LocationRole = 'capital' | 'major_city'
+
+export interface ObservationLocation {
+  id: string
+  name: string
+  latitude: number
+  longitude: number
+  /** ISO 3166-1 alpha-3. */
+  country_code: string
+  country_name: string
+  /** ISO 3166-2:IN for Indian locations. */
+  region_code: string | null
+  region_name: string | null
+  role: LocationRole
+  role_note: string | null
+}
+
+export interface LocationsResponse {
+  scope: GeoScope
+  scope_note: string
+  count: number
+  locations: ObservationLocation[]
+}
+
+export type CoverageStatus = 'stored' | 'partial' | 'not_stored'
+
+export interface LocationCoverage {
+  location_id: string
+  baseline_stored_days: number
+  baseline_expected_days: number
+  window_stored_days: number
+  window_expected_days: number
+  status: CoverageStatus
+}
+
+export interface CoverageResponse {
+  scope: GeoScope
+  start_date: string
+  end_date: string
+  baseline_start_year: number
+  baseline_end_year: number
+  status_note: string
+  locations: LocationCoverage[]
+}
+
+export interface CoverageRequest {
+  startDate: string
+  endDate: string
+  country?: string
+  region?: string
+}

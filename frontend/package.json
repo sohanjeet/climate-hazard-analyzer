@@ -11,7 +11,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "preview": "vite preview",
-    "check:browser": "node scripts/browser-check.mjs screenshots"
+    "check:browser": "node scripts/browser-check.mjs screenshots",
+    "check:maps": "node scripts/browser-check-maps.mjs screenshots/maps",
+    "build:geo": "node scripts/build-geo.mjs"
   },
   "dependencies": {
     "@fontsource-variable/fraunces": "^5.3.0",
@@ -21,20 +23,30 @@
     "@radix-ui/react-tooltip": "^1.4.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "d3-geo": "3.1.1",
+    "d3-selection": "3.0.0",
+    "d3-zoom": "3.0.0",
     "lucide-react": "^1.57.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "recharts": "^3.10.1",
-    "tailwind-merge": "^3.7.0"
+    "tailwind-merge": "^3.7.0",
+    "topojson-client": "3.1.0"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",
     "@testing-library/jest-dom": "^7.0.1",
     "@testing-library/react": "^16.3.3",
     "@testing-library/user-event": "^14.6.8",
+    "@types/d3-geo": "3.1.0",
+    "@types/d3-selection": "3.0.11",
+    "@types/d3-zoom": "3.0.8",
+    "@types/geojson": "7946.0.16",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.7",
+    "@types/topojson-client": "3.1.5",
+    "@types/topojson-specification": "1.0.5",
     "@vitejs/plugin-react": "^6.1.1",
     "axe-core": "^4.14.0",
     "jsdom": "^30.1.2",

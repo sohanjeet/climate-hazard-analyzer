@@ -18,7 +18,8 @@ logger = logging.getLogger("app.request")
 # Only these paths are logged verbatim; anything else is logged as "unmatched" so a crafted URL
 # cannot inject log lines.
 KNOWN_PATHS = frozenset({"/", "/health", "/health/db", "/api/weather", "/api/heatwaves",
-                         "/api/temperature-anomalies", "/docs", "/redoc", "/openapi.json"})
+                         "/api/temperature-anomalies", "/api/geography/locations", "/api/geography/coverage",
+                         "/docs", "/redoc", "/openapi.json"})
 HEATWAVE_PATH = "/api/heatwaves"
 ANOMALY_PATH = "/api/temperature-anomalies"
 

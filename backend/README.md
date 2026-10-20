@@ -7,6 +7,10 @@ FastAPI + MongoDB service that ingests Open-Meteo historical daily maximum tempe
 - `GET /api/weather?latitude&longitude&start_date&end_date`: ingest and return daily records (max 366 days per call).
 - `GET /api/heatwaves?latitude&longitude&start_date&end_date[&baseline_start_year&baseline_end_year][&rolling_window_years]`: heatwave events, per-year metrics, summary and a `trend` block (see Trend analysis). `rolling_window_years` is optional (2 to 30, default 5). Clients that ignore `trend` are unaffected.
 - `GET /api/temperature-anomalies?latitude&longitude&start_date&end_date[&baseline_start_year&baseline_end_year]`: annual mean daily maximum temperature and its anomaly against the fixed baseline (Phase 9, see [Temperature anomalies](#temperature-anomalies-phase-9)).
+- `GET /api/geography/locations[?country=IND][&region=IN-RJ]`: the curated observation locations used by the map pages (`app/services/geography_catalog.py`). `scope` is always `observation_location`. `country` must be ISO 3166-1 alpha-3. `region` must be a current ISO 3166-2:IN code (the 36 states and UTs), and only with `IND`. Invalid filters return `422`; a valid country with no location returns an empty list.
+- `GET /api/geography/coverage?start_date&end_date[&country][&region]`: for each matching location, stored valid days in the 1991–2020 baseline and in the window, and `status` (`stored`: an analysis needs no download; `partial`; `not_stored`). Same date rules as the analyses. It runs one aggregation on `weather_records` that is covered by the `uniq_location_date` index (hinted, so no document fetch), with `maxTimeMS` 5000. It never calls Open-Meteo, writes nothing, and says nothing about validity.
+
+Both geography endpoints use the general rate-limit bucket (60/min). No endpoint computes a country or state aggregate.
 
 The first heatwave request at a new location loads the 30-year baseline one calendar year at a time: about 30 Open-Meteo calls, at most 4 in flight at once (`WEATHER_FETCH_CONCURRENCY`). Cold-request behaviour is described in [Performance](#performance-phase-6-and-91); later requests read from MongoDB. Clients should show a loading state.
 
@@ -20,7 +24,7 @@ Every call recomputes the analysis and upserts the result into `analysis_results
 venv\Scripts\python -m pytest
 ```
 
-Tests marked `integration` need a reachable MongoDB (they use a throwaway database; Open-Meteo is mocked).
+Tests marked `integration` need a reachable MongoDB (they use a throwaway database; Open-Meteo is mocked). `tests/conftest.py` sets `MONGODB_URI` from `TEST_MONGODB_URI` (default `mongodb://localhost:27017`) before the app loads its settings, so the URI in `.env` (possibly Atlas) is never used. A non-local test URI is refused unless `ALLOW_REMOTE_TEST_DB=1`. **DANGEROUS:** it lets the integration fixtures create and drop `test_*` databases on that server, so use it only with a dedicated, disposable test deployment (never the production Atlas cluster), and never with a URI naming `climate_hazard_db` (refused).
 
 ### Heatwave detection: method and assumptions (`heatwave-v1`)
 

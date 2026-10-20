@@ -1,6 +1,6 @@
 # Climate Hazard Trend Analyzer
 
-A web dashboard that shows how often, how long and how intense heatwaves were at any place on Earth, and whether those numbers are trending up or down over a chosen period. You pick a latitude/longitude and a date window; the backend pulls historical daily maximum temperatures, detects heatwaves against a fixed local threshold, and fits statistical trends. Two views build on that (Phase 9): **annual temperature anomalies** against the same 1991 to 2020 baseline, and a **side-by-side comparison of 2 to 4 locations**.
+A web dashboard that shows how often, how long and how intense heatwaves were at any place on Earth, and whether those numbers are trending up or down over a chosen period. You pick a latitude/longitude and a date window; the backend pulls historical daily maximum temperatures, detects heatwaves against a fixed local threshold, and fits statistical trends. Two views build on that (Phase 9): **annual temperature anomalies** against the same 1991 to 2020 baseline, and a **side-by-side comparison of 2 to 4 locations**. Phase 10 adds **map explorers** (world and India) and a **state comparison**. These work on curated observation locations, and every value they show is a location-level observation, never a country or state average.
 
 > **Status:** development is complete and tested locally. Nothing has been deployed and there is no public URL yet. See [Deployment](#deployment) and [Known limitations](#known-limitations).
 
@@ -12,7 +12,7 @@ Browser (React SPA)  --GET /api/heatwaves, /api/temperature-anomalies-->  FastAP
                                                  +--> MongoDB (weather_records, ingestion_cache, analysis_results)
 ```
 
-- **Frontend** (`frontend/`): static single-page app. Calls only `GET /api/heatwaves` and `GET /api/temperature-anomalies`, validates every response at runtime, and has two views: **Analyze** (summary metrics, four charts, a temperature-anomaly section, trend insights, data-quality notes, methodology) and **Compare** (2 to 4 locations: summary cards, comparison table, three line charts, coverage notes).
+- **Frontend** (`frontend/`): static single-page app with seven routes: `/` Dashboard (summary metrics, four charts, a temperature-anomaly section, trend insights, data-quality notes, methodology), `/explore/global`, `/explore/india`, `/compare/cities` (2 to 4 locations), `/compare/states`, `/anomalies` and `/methodology`. It calls the two analysis endpoints and the two read-only geography endpoints, and validates every response at runtime. Map pages, map code and boundary files are lazy-loaded chunks.
 - **Backend** (`backend/`): FastAPI service. Loads the baseline (default 1991 to 2020) and the analysis window one calendar year at a time, stores daily records in MongoDB so repeat requests are served from the database, then computes heatwave events, annual metrics and trends.
 - **Data source:** [Open-Meteo Historical Weather API](https://open-meteo.com/en/docs/historical-weather-api), variable `temperature_2m_max`, UTC days.
 - `docs/phase4a_heatwave_design.md` is the original design note for the heatwave method; `docs/temperature_anomaly_design.md` covers the anomaly method and the comparison design.
@@ -82,6 +82,8 @@ Real `.env` / `.env.local` files are git-ignored; only the `.env.example` files 
 | `GET /api/heatwaves?latitude&longitude&start_date&end_date[&baseline_start_year&baseline_end_year&rolling_window_years]` | Heatwave events, annual metrics, summary, trend analysis, data quality. Rate limit 20/min per IP by default. |
 | `GET /api/temperature-anomalies?latitude&longitude&start_date&end_date[&baseline_start_year&baseline_end_year]` | Annual mean daily maximum temperature and its anomaly against the fixed baseline, with coverage, per-year status and data-quality warnings. Rate limit 20/min per IP by default, in its own bucket. |
 | `GET /api/weather?latitude&longitude&start_date&end_date` | Ingest and return daily records (max 366 days). Rate limit 60/min per IP by default. |
+| `GET /api/geography/locations[?country&region]` | Curated observation locations (scope `observation_location`). Read-only and static; 60/min bucket. |
+| `GET /api/geography/coverage?start_date&end_date[&country&region]` | Stored valid days per catalog location for the baseline and the window (`stored` / `partial` / `not_stored`). One index-only aggregation. Never downloads or computes anything; 60/min bucket. |
 | `GET /health` | Liveness. |
 | `GET /health/db` | Readiness; `503` when MongoDB is unreachable. |
 | `GET /docs`, `/redoc`, `/openapi.json` | Interactive API documentation. |
@@ -108,6 +110,14 @@ The full method, with its biases, is in [backend/README.md](backend/README.md).
 - Details, formulas and boundaries: [docs/temperature_anomaly_design.md](docs/temperature_anomaly_design.md) and [backend/README.md](backend/README.md).
 
 Example request: `curl "http://localhost:8000/api/temperature-anomalies?latitude=19.0760&longitude=72.8777&start_date=2010-01-01&end_date=2025-12-31"`.
+
+## Geospatial explorer (Phase 10)
+
+- **Pages:** Global Climate Explorer (world map; select or search a country), India Climate Explorer (all 36 states and union territories; summary cards, a chart of analysed locations, annual trends, a data-availability table) and State Comparison (2 to 4 states; summary cards, line charts, grouped bar chart of event statistics, annual trends, coverage, CSV download).
+- **What the numbers mean:** the APIs analyse one grid cell. So the maps show **observation locations**: one per Indian state/UT (the capital where it lies inside the territory, otherwise a major city: Punjab uses Ludhiana and Haryana uses Hisar, because Chandigarh is a separate UT), plus 27 locations in 26 other countries. Area colours show only data availability. Climate values appear on point markers and in panels labelled, for example, "Capital-city observation point, not a state-wide average". No country or state aggregate is computed anywhere. Countries without a location say so. The temperature trend is listed as unavailable because no endpoint computes it.
+- **No mass ingestion:** opening a page loads the static catalog and one coverage read. Analyses run only when you press Analyse or Compare (at most two locations at a time). A session cache shares results between pages. Countries with more than four locations offer no "analyse all".
+- **Boundaries:** Natural Earth 1:10m countries, India point of view (public domain), and geoBoundaries IND ADM1 (CC BY 2.5 IN, from DataMeet and the Election Commission of India) with current ISO 3166-2:IN codes. Both are simplified by `npm run build:geo` (pinned sources with SHA-256, pinned mapshaper). Rendering uses d3-geo, d3-zoom and topojson-client as React SVG, with no tile service or API key.
+- Design, data sources, licences, CRS, update process and the future state-aggregation method: [docs/geospatial_architecture.md](docs/geospatial_architecture.md).
 
 ## Historical-weather cache and performance (Phase 9.1)
 
@@ -137,9 +147,12 @@ npm run build
 npm run build
 npx vite preview --port 5173 --strictPort      # in a second terminal
 npm run check:browser
+
+# real-browser check of the map pages (360/768/1280/1680 px, light and dark, axe incl. contrast); starts no analysis
+npm run check:maps
 ```
 
-No test needs production credentials. Backend tests need only a local MongoDB; frontend tests are fully mocked or fixture-based.
+No test needs production credentials. Backend tests need only a local MongoDB. `backend/tests/conftest.py` pins `MONGODB_URI` to `TEST_MONGODB_URI` (default `mongodb://localhost:27017`) before the app reads its settings, and refuses a non-local URI unless `ALLOW_REMOTE_TEST_DB=1`. **DANGEROUS:** it lets the integration fixtures create and drop `test_*` databases on that server, so use it only with a dedicated, disposable test deployment (never the production Atlas cluster), and never with a URI naming `climate_hazard_db` (refused). Before Phase 10, a plain `pytest` run used the URI in `backend/.env`, which could be Atlas. Frontend tests are fully mocked or fixture-based.
 
 ## Deployment
 
@@ -151,7 +164,7 @@ Not performed yet. Per-platform settings and variables (Render, Atlas, Vercel) a
    - set `MONGODB_URI`, `CORS_ALLOWED_ORIGINS=<frontend origin>`, and `TRUST_PROXY_HEADERS=true` only if the platform's proxy sets `X-Forwarded-For`.
    - run a **single worker**: the rate limiter is per process (N workers multiply the limit by N). Use `/health` for liveness and `/health/db` for readiness.
     - **Request time:** a cold request loads about 31 yearly chunks and up to 120 for a 90-year window. Its latency remains upstream-dependent and was not re-benchmarked in Phase 9.1; the platform timeout must accommodate it (the browser gives up at 90 s). Warm performance improved in isolated Phase 9.1 benchmarks through indexed range reads (see [backend performance notes](backend/README.md#performance-phase-91)). Hosted-production latency and capacity have not been measured, so verify platform timeouts and end-to-end timing before launch.
-3. **Frontend**: `cd frontend && VITE_API_BASE_URL=<backend URL> npm run build`, then serve `frontend/dist/` from any static host. Production builds fail if `VITE_API_BASE_URL` is missing or invalid (and, on Vercel, if it is localhost or not https), so a bundle cannot silently call `localhost`. It is a single-page app with no client-side routing, so no rewrite rules are needed.
+3. **Frontend**: `cd frontend && VITE_API_BASE_URL=<backend URL> npm run build`, then serve `frontend/dist/` from any static host. Production builds fail if `VITE_API_BASE_URL` is missing or invalid (and, on Vercel, if it is localhost or not https), so a bundle cannot silently call `localhost`. It is a single-page app with client-side routes: the host must serve `index.html` for unknown paths (`frontend/vercel.json` does this on Vercel).
 4. Set `CORS_ALLOWED_ORIGINS` on the backend to the exact frontend origin, then check `/health/db` and run one analysis end to end.
 
 ## Known limitations
@@ -164,7 +177,8 @@ Not performed yet. Per-platform settings and variables (Render, Atlas, Vercel) a
 - Phase 9.1 isolated benchmarks found 31%/21% faster warm heatwave/anomaly analyses and 45%/47% faster two-/four-city comparisons. These figures are not production measurements; hosted behaviour, sustained load and capacity remain unverified.
 - Two locations whose coordinates differ but fall in the same Open-Meteo grid cell (about 10 km) give identical data; only identical coordinates (to 4 decimals) are refused.
 - Not verified: behaviour from a hosted backend (Atlas itself was verified from a local one), sustained load from many clients, any hosted environment.
-- Dark mode follows the operating system (no manual toggle).
+- The colour theme follows the operating system unless changed with the header toggle; the choice is kept in this browser only.
+- Map values are location-level only: no country-wide or state-wide aggregation exists yet (design in [docs/geospatial_architecture.md](docs/geospatial_architecture.md)). Boundaries are for navigation, generalised (world coastlines by up to ~20 km, islands under 150 km² omitted; India ~1 km), and imply no position on disputed territory.
 
 ## AI assistance disclosure
 

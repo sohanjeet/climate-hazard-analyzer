@@ -8,6 +8,7 @@ configure({ asyncUtilTimeout: 5000 })
 afterEach(() => {
   cleanup()
   vi.useRealTimers()
+  window.history.replaceState(null, '', '/') // routes live in the URL; every test starts on the dashboard
 })
 
 // jsdom lacks these browser APIs, which Recharts, Radix and the dashboard rely on.
@@ -33,6 +34,8 @@ if (!window.matchMedia) {
 }
 
 Element.prototype.scrollIntoView ??= () => {}
+// jsdom logs "not implemented" for window.scrollTo, which the router calls after an in-page navigation.
+window.scrollTo = () => {}
 
 // jsdom has no layout, so ResponsiveContainer would measure 0x0 and Recharts would draw nothing.
 // Render the chart at a fixed size instead; everything else in Recharts stays real.

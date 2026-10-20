@@ -38,6 +38,27 @@
   --series-3: #1baf7a;
   --series-4: #eda100;
 
+  /* Maps. Polygon fills encode only data coverage (neutral, never a climate value); markers carry the values.
+     Sequential = one heat hue, light to dark; diverging = cool / neutral grey / heat. Both validated
+     (dataviz validate_palette.js, ordinal mode) against --surface; markers also get an ink outline. */
+  --map-ocean: oklch(0.972 0.01 235);
+  --map-none: oklch(0.935 0.008 235);
+  --map-available: oklch(0.885 0.028 235);
+  --map-stored: oklch(0.8 0.055 235);
+  --map-border: oklch(0.995 0.003 235);
+  --map-hover: oklch(0.32 0.07 240);
+  --map-selected: oklch(0.24 0.035 242);
+  --seq-1: oklch(0.77 0.12 60);
+  --seq-2: oklch(0.68 0.145 50);
+  --seq-3: oklch(0.6 0.16 43);
+  --seq-4: oklch(0.51 0.155 35);
+  --seq-5: oklch(0.42 0.13 29);
+  --div-cool-2: oklch(0.48 0.13 250);
+  --div-cool-1: oklch(0.66 0.09 245);
+  --div-mid: oklch(0.8 0.006 240);
+  --div-heat-1: oklch(0.72 0.12 50);
+  --div-heat-2: oklch(0.58 0.185 38);
+
   --warning-bg: oklch(0.965 0.04 88);
   --warning-border: oklch(0.82 0.1 85);
   --warning-foreground: oklch(0.38 0.08 70);
@@ -76,6 +97,24 @@
   --series-2: #d95926;
   --series-3: #199e70;
   --series-4: #c98500;
+
+  --map-ocean: oklch(0.215 0.025 245);
+  --map-none: oklch(0.29 0.02 245);
+  --map-available: oklch(0.355 0.035 240);
+  --map-stored: oklch(0.45 0.06 238);
+  --map-border: oklch(0.2 0.025 245);
+  --map-hover: oklch(0.88 0.06 230);
+  --map-selected: oklch(0.96 0.01 235);
+  --seq-1: oklch(0.45 0.08 50);
+  --seq-2: oklch(0.56 0.12 48);
+  --seq-3: oklch(0.66 0.15 45);
+  --seq-4: oklch(0.76 0.15 52);
+  --seq-5: oklch(0.86 0.12 65);
+  --div-cool-2: oklch(0.78 0.1 240);
+  --div-cool-1: oklch(0.6 0.09 245);
+  --div-mid: oklch(0.5 0.01 245);
+  --div-heat-1: oklch(0.62 0.12 45);
+  --div-heat-2: oklch(0.75 0.16 45);
 
   --warning-bg: oklch(0.3 0.05 85);
   --warning-border: oklch(0.5 0.09 85);
@@ -128,7 +167,7 @@
   }
 
   html {
-    scroll-padding-top: 5rem;
+    scroll-padding-top: 7rem;
     -webkit-text-size-adjust: 100%;
   }
 

@@ -1,6 +1,6 @@
 import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
 import { AnalysisForm } from '@/components/AnalysisForm'
-import { AppHeader, type AppView, type NavSection } from '@/components/AppHeader'
+import { AppHeader, type NavSection } from '@/components/AppHeader'
 import { ComparisonView } from '@/components/compare/ComparisonView'
 import { DataQuality } from '@/components/DataQuality'
 import { Methodology } from '@/components/Methodology'
@@ -8,19 +8,33 @@ import { ResultsHeader } from '@/components/ResultsHeader'
 import { ChartsFallback, EmptyState, ErrorState, LoadingState } from '@/components/StatePanels'
 import { SummaryMetrics } from '@/components/SummaryMetrics'
 import { TrendInsights } from '@/components/TrendInsights'
+import { Skeleton } from '@/components/ui/skeleton'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { useAnomalyAnalysis } from '@/hooks/useAnomalyAnalysis'
 import type { ComparisonFetchers } from '@/hooks/useComparison'
 import { useCountdown, useHeatwaveAnalysis } from '@/hooks/useHeatwaveAnalysis'
-import { useSystemTheme } from '@/hooks/useMediaQuery'
+import { useTheme } from '@/hooks/useTheme'
+import type { GeographyApi } from '@/hooks/useGeography'
 import { fetchHeatwaves, fetchTemperatureAnomalies } from '@/lib/api/client'
 import type { HeatwaveRequest } from '@/lib/api/types'
 import { formatInteger } from '@/lib/format'
+import { ROUTES, useRoute, type RouteId } from '@/lib/router'
 import { formFieldForApiField, formFieldForMessage, type FormErrors } from '@/lib/validation'
 
 // Recharts is the bulk of the bundle and is only needed once there are results.
 const ChartsSection = lazy(() => import('@/components/ChartsSection').then((m) => ({ default: m.ChartsSection })))
 const AnomalySection = lazy(() => import('@/components/AnomalySection').then((m) => ({ default: m.AnomalySection })))
+
+// Each page is its own chunk: the map code and boundary files never reach the dashboard bundle.
+const GlobalExplorer = lazy(() => import('@/pages/GlobalExplorer'))
+const IndiaExplorer = lazy(() => import('@/pages/IndiaExplorer'))
+const StateComparison = lazy(() => import('@/pages/StateComparison'))
+const AnomaliesPage = lazy(() => import('@/pages/AnomaliesPage'))
+const MethodologyPage = lazy(() => import('@/pages/MethodologyPage'))
+const NotFoundPage = lazy(() => import('@/pages/NotFoundPage'))
+
+/** Pages that mount on first visit and then stay mounted (hidden), so their selections and results survive navigation. */
+const KEPT_PAGES = ['compare-cities', 'global', 'india', 'compare-states', 'anomalies'] as const
 
 const RESULT_SECTIONS: NavSection[] = [
   { id: 'summary', label: 'Summary' },
@@ -31,8 +45,8 @@ const RESULT_SECTIONS: NavSection[] = [
   { id: 'method', label: 'Method' },
 ]
 
-/** Height of the sticky header plus breathing room; a heading above this line counts as hidden. */
-const HEADER_CLEARANCE_PX = 72
+/** Height of the sticky header (with its result-section row) plus breathing room; a heading above this line counts as hidden. */
+const HEADER_CLEARANCE_PX = 112
 
 const NO_SECTIONS: NavSection[] = []
 
@@ -43,21 +57,26 @@ interface AppProps {
   fetcher?: Fetcher
   anomalyFetcher?: AnomalyFetcher
   comparisonFetchers?: ComparisonFetchers
+  /** Analysis fetchers for the map and state-comparison pages (default: the shared session cache). */
+  geoFetchers?: ComparisonFetchers
+  geography?: GeographyApi
   now?: Date
 }
 
-export default function App({ fetcher = fetchHeatwaves, anomalyFetcher = fetchTemperatureAnomalies, comparisonFetchers, now }: AppProps) {
-  useSystemTheme()
+export default function App({ fetcher = fetchHeatwaves, anomalyFetcher = fetchTemperatureAnomalies, comparisonFetchers, geoFetchers, geography, now }: AppProps) {
+  const theme = useTheme()
+  const route = useRoute()
   const { state, run, cancel } = useHeatwaveAnalysis(fetcher)
   const anomalies = useAnomalyAnalysis(anomalyFetcher)
-  const [view, setView] = useState<AppView>('analyzer')
-  // The comparison view mounts the first time it is opened and then stays mounted (hidden) so switching back
-  // and forth keeps its selection and results.
-  const [compareOpened, setCompareOpened] = useState(false)
-  function changeView(next: AppView) {
-    if (next === 'compare') setCompareOpened(true)
-    setView(next)
-  }
+  const [opened, setOpened] = useState<ReadonlySet<RouteId>>(() => new Set([route]))
+  if (!opened.has(route)) setOpened(new Set([...opened, route])) // adjust state during render, not in an effect
+  const view = route
+
+  useEffect(() => {
+    const def = ROUTES.find((r) => r.id === route)
+    document.title = `${def ? def.title : 'Page not found'} · Climate Hazard Trend Analyzer`
+  }, [route])
+
   const headingRef = useRef<HTMLHeadingElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
   const cooldownSeconds = useCountdown(state.status === 'error' ? state.retryAt : null)
@@ -120,19 +139,20 @@ export default function App({ fetcher = fetchHeatwaves, anomalyFetcher = fetchTe
   return (
     <TooltipProvider>
       <a
-        href={view === 'compare' ? '#compare-results' : '#results'}
+        href={view === 'compare-cities' ? '#compare-results' : view === 'dashboard' ? '#results' : '#page-content'}
         className="sr-only z-50 rounded-md bg-primary px-4 py-2 font-semibold text-primary-foreground focus:not-sr-only focus:fixed focus:top-3 focus:left-3"
       >
         Skip to results
       </a>
       <AppHeader
-        sections={view === 'analyzer' && state.status === 'success' ? RESULT_SECTIONS : NO_SECTIONS}
-        view={view}
-        onViewChange={changeView}
+        sections={view === 'dashboard' && state.status === 'success' ? RESULT_SECTIONS : NO_SECTIONS}
+        route={route}
+        theme={theme.preference}
+        onThemeChange={theme.setPreference}
       />
 
       <main id="top" className="mx-auto max-w-[88rem] px-4 pt-8 pb-20 sm:px-6 sm:pt-12 lg:px-8">
-        <div hidden={view !== 'analyzer'}>
+        <div hidden={view !== 'dashboard'}>
         <div className="max-w-3xl">
           <h1 className="font-display text-[2rem] leading-[1.1] font-semibold tracking-tight text-balance sm:text-5xl">
             Heatwave Trend Analyzer
@@ -184,12 +204,38 @@ export default function App({ fetcher = fetchHeatwaves, anomalyFetcher = fetchTe
           </div>
         </div>
         </div>
-        {compareOpened ? (
-          <div hidden={view !== 'compare'}>
+        {opened.has('compare-cities') ? (
+          <div hidden={view !== 'compare-cities'}>
             <ComparisonView fetchers={comparisonFetchers} now={now} />
           </div>
         ) : null}
+        <div id="page-content" tabIndex={-1} className="outline-none">
+          {/* One boundary per page, so loading one page never suspends another that is already mounted. */}
+          {KEPT_PAGES.filter((id) => id !== 'compare-cities' && opened.has(id)).map((id) => (
+            <div key={id} hidden={view !== id}>
+              <Suspense fallback={<PageFallback />}>
+                {id === 'global' ? <GlobalExplorer fetchers={geoFetchers} geography={geography} now={now} /> : null}
+                {id === 'india' ? <IndiaExplorer fetchers={geoFetchers} geography={geography} now={now} /> : null}
+                {id === 'compare-states' ? <StateComparison fetchers={geoFetchers} geography={geography} now={now} /> : null}
+                {id === 'anomalies' ? <AnomaliesPage fetcher={anomalyFetcher} now={now} /> : null}
+              </Suspense>
+            </div>
+          ))}
+          {view === 'methodology' || view === 'not-found' ? (
+            <Suspense fallback={<PageFallback />}>{view === 'methodology' ? <MethodologyPage /> : <NotFoundPage />}</Suspense>
+          ) : null}
+        </div>
       </main>
     </TooltipProvider>
+  )
+}
+
+function PageFallback() {
+  return (
+    <div role="status" aria-label="Loading page" className="flex flex-col gap-6">
+      <Skeleton className="h-12 w-2/3 max-w-xl" />
+      <Skeleton className="h-6 w-full max-w-2xl" />
+      <Skeleton className="aspect-[2/1] w-full" />
+    </div>
   )
 }

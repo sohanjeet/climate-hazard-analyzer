@@ -1,0 +1,34 @@
+{
+  "crs": "EPSG:4326 (WGS 84 longitude/latitude, degrees)",
+  "tool": "mapshaper@0.7.72",
+  "isoCodeUpdates": {
+    "IN-CT": "IN-CG",
+    "IN-OR": "IN-OD",
+    "IN-TG": "IN-TS",
+    "IN-UT": "IN-UK"
+  },
+  "sources": {
+    "world": {
+      "title": "Natural Earth 1:10m Admin 0 – Countries, India point of view",
+      "version": "natural-earth-vector v5.1.2",
+      "url": "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/v5.1.2/geojson/ne_10m_admin_0_countries_ind.geojson",
+      "sha256": "3e67a5a6ddeff3247ca8400cd2514fd4a5ac6e5432823b25d610a7028597d45f",
+      "license": "Public domain (Natural Earth terms of use)",
+      "licenseUrl": "https://www.naturalearthdata.com/about/terms-of-use/",
+      "attribution": "Made with Natural Earth.",
+      "simplify": "variable interval=this.area<1e10?6000:20000",
+      "minIslandKm2": 150
+    },
+    "india": {
+      "title": "geoBoundaries IND ADM1 (States and Union Territories)",
+      "version": "geoBoundaries gbOpen, commit 9469f09 (built 2023-12-12)",
+      "url": "https://github.com/wmgeolab/geoBoundaries/raw/9469f09/releaseData/gbOpen/IND/ADM1/geoBoundaries-IND-ADM1_simplified.geojson",
+      "sha256": "4c63fe43294a391e8f2de4e9f86f3edb60f8688275b9fee90c61fb2aa0c26061",
+      "license": "Creative Commons Attribution 2.5 India (CC BY 2.5 IN)",
+      "licenseUrl": "https://creativecommons.org/licenses/by/2.5/in/",
+      "attribution": "Boundaries: geoBoundaries (Runfola et al. 2020), from DataMeet India community and Election Commission of India data, CC BY 2.5 IN.",
+      "simplify": "interval=1000",
+      "minIslandKm2": 0
+    }
+  }
+}

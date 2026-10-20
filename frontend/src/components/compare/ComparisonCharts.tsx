@@ -85,7 +85,7 @@ function captionFor(config: ComparisonChartConfig, data: ComparisonChartData): s
   return `${parts.join('. ')}.${config.key === 'heatwave_days' ? ' A point at 0 means a complete year with no heatwave days; a gap means no comparable data.' : ''}`
 }
 
-function ComparisonChart({ config, cities }: { config: ComparisonChartConfig; cities: readonly CityResult[] }) {
+export function ComparisonChart({ config, cities }: { config: ComparisonChartConfig; cities: readonly CityResult[] }) {
   const reducedMotion = usePrefersReducedMotion()
   const uid = useId().replace(/[^a-zA-Z0-9_-]/g, '')
   const data = buildComparisonChart(cities, config.key)
