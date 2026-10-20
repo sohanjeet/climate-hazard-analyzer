@@ -28,9 +28,19 @@ Target layout: MongoDB Atlas (database) <- Render (FastAPI backend) <- Vercel (s
 
 `backend/.env` is never uploaded (git-ignored). On Render set variables in the dashboard.
 
+### Render Free cold starts
+
+Render Free spins a web service down after about 15 minutes without traffic and starts it again on the next request. Treat the figures below as expectations to **verify**, not measurements:
+
+- The first request after idle can take roughly a minute (Render's own guidance is up to about 50 s or more) while the service boots and connects to Atlas. Later requests are fast until the service sleeps again.
+- The frontend allows for this: geography requests (`/api/geography/locations` and `/api/geography/coverage`) have a 90 s browser timeout (`GEOGRAPHY_TIMEOUT_MS` in `frontend/src/lib/api/client.ts`, same as the 90 s analysis timeout). After 5 s of waiting, the Explorer and State comparison pages show a note that the server may be waking up. If the 90 s limit passes, the page shows a timeout message with **Try again**; retrying normally succeeds because the service is awake by then.
+- Analysis requests keep their own 90 s timeout and cancellation behaviour. A cold analysis on a cold server can exceed 90 s (boot plus ingestion); the retry control applies there too.
+- There is deliberately no automated wake-up polling or keep-alive pinging. Visitors who arrive after idle see the loading note instead. A paid always-on instance removes the cold start.
+- The in-memory rate limiter resets whenever the service restarts, so it is also cleared after each sleep.
+
 ## Database (MongoDB Atlas)
 
-1. Create a cluster and a database user with read/write on the application database only (not an Atlas admin).
+1. Create a cluster and a dedicated database user with `readWrite` on `climate_hazard_db` only (not an Atlas admin, and separate from any user you use for local development).
 2. Network access: Render's free plan has no fixed outbound IP, so allow `0.0.0.0/0` and rely on the user's strong password, or use a paid plan with static outbound IPs and allow only those.
 3. Use the `mongodb+srv://` string. `dnspython` (needed for `+srv`) is installed automatically as a dependency of `pymongo` 4.x.
 4. TLS: Atlas requires TLS and PyMongo enables it for `mongodb+srv://` by default, using the platform's CA bundle; no code or option change is needed. **Verify** the connection on first deploy: a TLS or network-access problem shows up as `MongoDB connection failed (<ErrorName>)` in the logs and the service exits at startup. Error messages are deliberately stripped of the connection string.

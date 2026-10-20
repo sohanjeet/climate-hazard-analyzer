@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useComparison } from '@/hooks/useComparison'
 import { DEFAULT_GEOGRAPHY_API, useCoverage, useObservationLocations } from '@/hooks/useGeography'
+import { useSlowHint } from '@/hooks/useSlowHint'
 import type { ObservationLocation } from '@/lib/api/types'
 import { MAX_LOCATIONS, MIN_LOCATIONS, buildCityMetrics, hasError, isLoading, locationId, type CityResult, type ComparisonLocation } from '@/lib/comparison'
 import { buildComparisonCsv, downloadText } from '@/lib/csv'
@@ -35,6 +36,7 @@ export default function StateComparison({ fetchers = SHARED_FETCHERS, geography 
   const uid = useId()
   const { state, run, retry, retryFailed, cancel } = useComparison(fetchers)
   const [catalog, retryCatalog] = useObservationLocations(geography)
+  const slowCatalog = useSlowHint(catalog.status === 'loading')
   const [picked, setPicked] = useState<Picked[]>([])
   const [years, setYears] = useState<YearRange>(() => defaultYearRange(now))
   const [indicator, setIndicator] = useState<IndicatorId>('heatwave_days')
@@ -140,6 +142,12 @@ export default function StateComparison({ fetchers = SHARED_FETCHERS, geography 
             <p role="alert" className="text-sm text-danger-foreground">
               Observation locations could not be loaded, so states cannot be compared yet.{' '}
               <button type="button" className="font-semibold underline underline-offset-4" onClick={retryCatalog}>Retry</button>
+            </p>
+          ) : null}
+          {catalog.status === 'loading' ? (
+            <p role="status" className="text-sm text-muted-foreground">
+              Loading observation locations…
+              {slowCatalog && ' The server may be waking up after a period of inactivity. This can take up to a minute on the first visit.'}
             </p>
           ) : null}
           <div className="flex flex-wrap items-center gap-3">

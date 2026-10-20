@@ -1,6 +1,6 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { makeAnalysis } from '@/test/fixtures'
-import { buildHeatwaveUrl, fetchHeatwaves } from './client'
+import { GEOGRAPHY_TIMEOUT_MS, REQUEST_TIMEOUT_MS, buildHeatwaveUrl, fetchCoverage, fetchHeatwaves, fetchLocations } from './client'
 import { ApiError } from './errors'
 import type { HeatwaveRequest } from './types'
 
@@ -153,6 +153,46 @@ describe('fetchHeatwaves transport failures', () => {
       })
     const error = await failure(hang, { timeoutMs: 20 })
     expect(error.kind).toBe('timeout')
+  })
+
+  describe('geography timeout', () => {
+    const hang: typeof fetch = (_url, init) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+      })
+
+    afterEach(() => vi.useRealTimers())
+
+    it('is 90 s for geography and unchanged at 90 s for analyses', () => {
+      expect(GEOGRAPHY_TIMEOUT_MS).toBe(90_000)
+      expect(REQUEST_TIMEOUT_MS).toBe(90_000)
+    })
+
+    it('keeps waiting past the old 20 s limit, then times out at 90 s', async () => {
+      vi.useFakeTimers()
+      const pending = fetchLocations({}, { baseUrl, fetchImpl: hang }).then(() => null, (e: unknown) => e)
+      await vi.advanceTimersByTimeAsync(89_000)
+      let settled = false
+      void pending.then(() => { settled = true })
+      await vi.advanceTimersByTimeAsync(0)
+      expect(settled).toBe(false)
+      await vi.advanceTimersByTimeAsync(1_000)
+      expect((await pending as ApiError).kind).toBe('timeout')
+    })
+
+    it('applies the same limit to coverage reads', async () => {
+      vi.useFakeTimers()
+      const pending = fetchCoverage({ startDate: '2020-01-01', endDate: '2020-12-31' }, { baseUrl, fetchImpl: hang }).then(() => null, (e: unknown) => e)
+      await vi.advanceTimersByTimeAsync(90_000)
+      expect((await pending as ApiError).kind).toBe('timeout')
+    })
+
+    it('still honours caller cancellation', async () => {
+      const controller = new AbortController()
+      const pending = fetchLocations({}, { baseUrl, fetchImpl: hang, signal: controller.signal }).then(() => null, (e: unknown) => e)
+      controller.abort()
+      expect((await pending as ApiError).kind).toBe('aborted')
+    })
   })
 
   it('reports a caller abort as aborted, not as a network error', async () => {

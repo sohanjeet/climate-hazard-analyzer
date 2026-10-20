@@ -63,8 +63,11 @@ export function fetchTemperatureAnomalies(
   return getJson(buildAnomalyUrl(request, options.baseUrl), parseTemperatureAnomalies, options)
 }
 
-/** Geography reads never ingest data and answer in well under a second; a slow one is a problem, not work. */
-export const GEOGRAPHY_TIMEOUT_MS = 20_000
+/**
+ * Geography reads never ingest data and answer in well under a second once the backend is awake. A free-tier host
+ * (Render Free) sleeps idle services and a cold start can take about a minute, so the first read may be slow.
+ */
+export const GEOGRAPHY_TIMEOUT_MS = 90_000
 
 export function buildLocationsUrl(filter: { country?: string; region?: string } = {}, baseUrl: string = getApiBaseUrl()): string {
   const params = new URLSearchParams()
